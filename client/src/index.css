@@ -2,9 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  display: block; /* Overrides Vite's flex/center behavior */
-  min-width: 320px;
-  min-height: 100vh;
+@layer base {
+    body {
+        margin: 0;
+        display: block;
+        /* Overrides Vite's flex/center behavior */
+        min-width: 320px;
+        min-height: 100vh;
+        @apply bg-white text-gray-900 dark:bg-gray-950 dark:text-white;
+        transition: background-color 0.2s ease, color 0.2s ease;
+    }
 }
