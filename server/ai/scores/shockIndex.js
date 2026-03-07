@@ -1,0 +1,1 @@
+module.exports = { calculateShockIndex: () => ({ score: 0 }) };

@@ -1,0 +1,1 @@
+module.exports = { calculateRTS: () => ({ score: 0 }) };

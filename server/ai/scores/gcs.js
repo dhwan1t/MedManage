@@ -1,0 +1,1 @@
+module.exports = { calculateGCS: () => ({ score: 0 }) };

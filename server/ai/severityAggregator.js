@@ -1,0 +1,1 @@
+module.exports = { calculateSeverity: () => ({ score: 0, level: 'stable', canWait: true, flags: [] }) };

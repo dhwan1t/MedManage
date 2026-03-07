@@ -1,0 +1,1 @@
+module.exports = { calculateSOFA: () => ({ score: 0 }) };

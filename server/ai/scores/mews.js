@@ -1,0 +1,1 @@
+module.exports = { calculateMEWS: () => ({ score: 0 }) };
