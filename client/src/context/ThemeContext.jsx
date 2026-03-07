@@ -1,24 +1,24 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useState, useEffect } from "react";
 
-const ThemeContext = createContext()
+const ThemeContext = createContext();
 
-export const ThemeProvider = ({ children }) => {
-    const [isDark, setIsDark] = useState(true)
+export function ThemeProvider({ children }) {
+  const [isDark, setIsDark] = useState(true);
 
-    useEffect(() => {
-        const root = document.documentElement
-        if (isDark) {
-            root.classList.add('dark')
-        } else {
-            root.classList.remove('dark')
-        }
-    }, [isDark])
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDark) {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }, [isDark]);
 
-    return (
-        <ThemeContext.Provider value={{ isDark, setIsDark }}>
-            {children}
-        </ThemeContext.Provider>
-    )
+  return (
+    <ThemeContext.Provider value={{ isDark, setIsDark }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
-export const useTheme = () => useContext(ThemeContext)
+export default ThemeContext;
