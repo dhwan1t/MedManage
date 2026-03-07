@@ -1,0 +1,1 @@
+export default function PatientVitalsForm() { return <div>PatientVitalsForm Placeholder</div>; }

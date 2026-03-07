@@ -1,0 +1,1 @@
+export default function RequestAmbulance() { return <div>RequestAmbulance Placeholder</div>; }

@@ -1,0 +1,1 @@
+export default function HospitalRatings() { return <div>HospitalRatings Placeholder</div>; }

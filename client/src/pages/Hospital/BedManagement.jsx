@@ -1,0 +1,1 @@
+export default function BedManagement() { return <div>BedManagement Placeholder</div>; }

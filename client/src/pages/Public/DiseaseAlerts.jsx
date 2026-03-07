@@ -1,0 +1,1 @@
+export default function DiseaseAlerts() { return <div>DiseaseAlerts Placeholder</div>; }

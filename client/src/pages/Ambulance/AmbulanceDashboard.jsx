@@ -1,0 +1,1 @@
+export default function AmbulanceDashboard() { return <div>AmbulanceDashboard Placeholder</div>; }

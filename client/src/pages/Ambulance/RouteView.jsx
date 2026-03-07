@@ -1,0 +1,1 @@
+export default function RouteView() { return <div>RouteView Placeholder</div>; }

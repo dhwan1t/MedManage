@@ -1,0 +1,1 @@
+export default function HospitalDashboard() { return <div>HospitalDashboard Placeholder</div>; }

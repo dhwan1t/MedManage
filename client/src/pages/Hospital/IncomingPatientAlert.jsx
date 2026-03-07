@@ -1,0 +1,1 @@
+export default function IncomingPatientAlert() { return <div>IncomingPatientAlert Placeholder</div>; }

@@ -1,0 +1,1 @@
+export default function SymptomChecker() { return <div>SymptomChecker Placeholder</div>; }
