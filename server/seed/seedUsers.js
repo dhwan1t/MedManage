@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const path = require('path');
 const User = require('../models/User');
-require('dotenv').config({ path: '../.env' }); // Ensure dotenv targets the right path for connection
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const seedUsers = async () => {
     try {
