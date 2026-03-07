@@ -9,6 +9,7 @@ import {
 // Auth Pages
 import LoginPage from "./pages/Auth/LoginPage";
 import RegisterPage from "./pages/Auth/RegisterPage";
+import DemoPage from "./pages/Auth/DemoPage";
 
 // Public Pages
 import LandingPage from "./pages/Public/LandingPage";
@@ -36,14 +37,17 @@ import LiveMap from "./pages/Admin/LiveMap";
 
 // Shared
 import ProtectedRoute from "./components/shared/ProtectedRoute";
+import Navbar from "./components/shared/Navbar";
 
 function App() {
   return (
     <Router>
+      <Navbar />
       <Routes>
         {/* ── Auth Routes ── */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/demo" element={<DemoPage />} />
 
         {/* ── Public Routes (no auth required) ── */}
         <Route path="/" element={<LandingPage />} />

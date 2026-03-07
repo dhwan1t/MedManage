@@ -10,16 +10,20 @@ const PUBLIC_ROLES = ["public"];
 // Roles that require an existing admin to assign
 const PRIVILEGED_ROLES = ["ambulance", "hospital", "admin"];
 
-// POST /api/auth/register — Public self-registration (public role only)
+// POST /api/auth/register — Self-registration (any role for hackathon demo)
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, role } = req.body;
 
     if (!name || !email || !password) {
       return res
         .status(400)
         .json({ msg: "Please provide name, email, and password" });
     }
+
+    // Accept any valid role; default to "public" if missing or invalid
+    const ALLOWED_ROLES = ["public", "ambulance", "hospital", "admin"];
+    const assignedRole = ALLOWED_ROLES.includes(role) ? role : "public";
 
     let user = await User.findOne({ email });
     if (user) {
@@ -33,7 +37,7 @@ router.post("/register", async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: "public",
+      role: assignedRole,
       phone,
     });
 

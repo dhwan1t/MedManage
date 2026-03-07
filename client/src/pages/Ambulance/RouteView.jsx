@@ -1,21 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/useAuth";
 import { createSocket } from "../../utils/socket";
+
+// Fallback values used when API call fails
+const FALLBACK_HOSPITAL = "City Central Hospital";
+const FALLBACK_VITALS = { hr: 110, bp: "140/90", spo2: 92 };
+const FALLBACK_ETA_SECONDS = 8 * 60;
 
 export default function RouteView() {
   const { caseId } = useParams();
   const navigate = useNavigate();
+  const { authHeaders } = useAuth();
 
-  // Mock initial state
-  const hospitalName = "City Central Hospital";
-  const vitals = {
-    hr: 110,
-    bp: "140/90",
-    spo2: 92,
-  };
+  // Real data state — starts with fallbacks, overwritten by API
+  const [hospitalName, setHospitalName] = useState(FALLBACK_HOSPITAL);
+  const [vitals, setVitals] = useState(FALLBACK_VITALS);
+  const [_dataLoaded, setDataLoaded] = useState(false);
 
   // Countdown timer state
-  const [etaSeconds, setEtaSeconds] = useState(8 * 60); // 8:00
+  const [etaSeconds, setEtaSeconds] = useState(FALLBACK_ETA_SECONDS);
 
   // Status check-ins
   const [statuses, setStatuses] = useState({
@@ -30,6 +34,108 @@ export default function RouteView() {
   );
 
   const [isArriving, setIsArriving] = useState(false);
+
+  // Fetch real case data on mount
+  useEffect(() => {
+    if (!caseId) return;
+
+    let cancelled = false;
+
+    async function fetchCaseData() {
+      try {
+        const response = await fetch(`/api/cases/${caseId}`, {
+          headers: authHeaders(),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+
+        if (cancelled) return;
+
+        // Extract hospital name from the populated selectedHospital or hospital field
+        const hospitalObj = data.selectedHospital || data.hospital || null;
+        if (hospitalObj) {
+          const name =
+            typeof hospitalObj === "object" ? hospitalObj.name : null;
+          if (name) setHospitalName(name);
+        }
+
+        // Extract patient vitals from the populated patient field
+        const patient = data.patient || {};
+        const v = patient.vitals || {};
+
+        const hr = v.heartRate || v.hr;
+        const systolic = v.systolic || v.systolicBP;
+        const diastolic = v.diastolic || v.diastolicBP;
+        const spo2 = v.oxygenSat || v.spO2 || v.spo2;
+
+        if (hr || systolic || spo2) {
+          setVitals({
+            hr: hr || FALLBACK_VITALS.hr,
+            bp:
+              systolic && diastolic
+                ? `${systolic}/${diastolic}`
+                : systolic
+                  ? `${systolic}/--`
+                  : FALLBACK_VITALS.bp,
+            spo2: spo2 || FALLBACK_VITALS.spo2,
+          });
+        }
+
+        // Calculate ETA from timeline if possible
+        // Look for the en_route event and compute remaining time
+        const timeline = data.timeline || [];
+        const enRouteEvent = timeline.find(
+          (t) =>
+            t.event === "en_route" ||
+            t.event === "hospital_selected" ||
+            t.event === "vitals_updated",
+        );
+
+        // Check if case has a recommendations array with estimatedMinutes
+        const selectedRec =
+          data.recommendations && data.selectedHospital
+            ? data.recommendations.find(
+                (r) =>
+                  r.hospitalId ===
+                  (typeof data.selectedHospital === "object"
+                    ? data.selectedHospital._id
+                    : data.selectedHospital),
+              )
+            : null;
+
+        let etaMins = selectedRec?.estimatedMinutes || null;
+
+        if (etaMins) {
+          // If we have an en_route timestamp, subtract elapsed time
+          if (enRouteEvent && enRouteEvent.timestamp) {
+            const elapsedMs =
+              Date.now() - new Date(enRouteEvent.timestamp).getTime();
+            const elapsedMins = elapsedMs / 60000;
+            const remaining = Math.max(0, etaMins - elapsedMins);
+            setEtaSeconds(Math.round(remaining * 60));
+          } else {
+            setEtaSeconds(etaMins * 60);
+          }
+        }
+
+        setDataLoaded(true);
+      } catch (err) {
+        console.warn(
+          "RouteView: Failed to fetch case data, using fallback values:",
+          err.message,
+        );
+        // Fallback values are already set as initial state — nothing to do
+        setDataLoaded(true);
+      }
+    }
+
+    fetchCaseData();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId, authHeaders]);
 
   // Timer Effect
   useEffect(() => {
@@ -82,8 +188,27 @@ export default function RouteView() {
       }
     });
 
+    // Listen for real-time vitals updates for this case
+    socket.on("case:vitals_updated", (data) => {
+      if (data && (data.caseId === caseId || data.caseObjectId === caseId)) {
+        const v = data.vitals || {};
+        const hr = v.heartRate || v.hr;
+        const systolic = v.systolic || v.systolicBP;
+        const diastolic = v.diastolic || v.diastolicBP;
+        const spo2 = v.oxygenSat || v.spO2 || v.spo2;
+
+        if (hr || systolic || spo2) {
+          setVitals((prev) => ({
+            hr: hr || prev.hr,
+            bp: systolic && diastolic ? `${systolic}/${diastolic}` : prev.bp,
+            spo2: spo2 || prev.spo2,
+          }));
+        }
+      }
+    });
+
     return () => socket.disconnect();
-  }, []);
+  }, [caseId]);
 
   const formatTime = (totalSeconds) => {
     const m = Math.floor(totalSeconds / 60);
@@ -94,20 +219,19 @@ export default function RouteView() {
   const handleArrival = async () => {
     setIsArriving(true);
     try {
-      // Mock API PUT call
       await fetch(`/api/cases/${caseId || "mock"}/status`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ status: "arrived" }),
       });
 
       // UX Delay
       await new Promise((r) => setTimeout(r, 1200));
 
-      navigate("/ambulance/dashboard");
+      navigate("/ambulance");
     } catch {
       await new Promise((r) => setTimeout(r, 1000));
-      navigate("/ambulance/dashboard"); // Fallback route
+      navigate("/ambulance"); // Fallback route
     } finally {
       setIsArriving(false);
     }
