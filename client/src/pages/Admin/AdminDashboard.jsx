@@ -1,206 +1,184 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
 import { useNavigate } from "react-router-dom";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
+import AuthContext from "../../context/AuthContext";
 
-const mockCityData = {
-  Ludhiana: {
-    stats: {
-      ambulances: 12,
-      hospitalsOnline: 8,
-      casesToday: 47,
-      livesImpacted: 47,
-      avgResponse: 6.2,
-    },
-    hospitals: [
-      {
-        id: "h1",
-        name: "City Medical Center",
-        beds: 12,
-        icu: 3,
-        ot: 2,
-        er: 5,
-        status: "ACCEPTING",
-        rating: 4.8,
-      },
-      {
-        id: "h2",
-        name: "Fortis Escorts",
-        beds: 0,
-        icu: 0,
-        ot: 0,
-        er: 0,
-        status: "AT CAPACITY",
-        rating: 4.5,
-      },
-      {
-        id: "h3",
-        name: "DMC Hospital",
-        beds: 4,
-        icu: 1,
-        ot: 0,
-        er: 2,
-        status: "EMERGENCY ONLY",
-        rating: 4.9,
-      },
-      {
-        id: "h4",
-        name: "Civil Hospital",
-        beds: 24,
-        icu: 5,
-        ot: 2,
-        er: 8,
-        status: "ACCEPTING",
-        rating: 3.8,
-      },
-    ],
-    feed: [
-      {
-        id: 1,
-        text: "AMB-2047 dispatched to City Medical Center",
-        time: "2 min ago",
-        type: "urgent",
-      },
-      {
-        id: 2,
-        text: "Patient PT-9921 severity: CRITICAL",
-        time: "3 min ago",
-        type: "critical",
-      },
-      {
-        id: 3,
-        text: "OT reserved at DMC Hospital",
-        time: "4 min ago",
-        type: "stable",
-      },
-      {
-        id: 4,
-        text: "AMB-1022 arrived at scene",
-        time: "8 min ago",
-        type: "stable",
-      },
-    ],
+// Map DB status enums to display strings
+const STATUS_DISPLAY = {
+  accepting: "ACCEPTING",
+  at_capacity: "AT CAPACITY",
+  emergency_only: "EMERGENCY ONLY",
+};
+
+const EMPTY_DATA = {
+  stats: {
+    ambulances: 0,
+    hospitalsOnline: 0,
+    casesToday: 0,
+    totalCases: 0,
+    avgResponse: 0,
   },
-  Chandigarh: {
-    stats: {
-      ambulances: 18,
-      hospitalsOnline: 12,
-      casesToday: 82,
-      livesImpacted: 81,
-      avgResponse: 5.4,
-    },
-    hospitals: [
-      {
-        id: "h5",
-        name: "PGIMER",
-        beds: 2,
-        icu: 0,
-        ot: 1,
-        er: 1,
-        status: "EMERGENCY ONLY",
-        rating: 4.9,
-      },
-      {
-        id: "h6",
-        name: "Max Super Speciality",
-        beds: 15,
-        icu: 4,
-        ot: 3,
-        er: 4,
-        status: "ACCEPTING",
-        rating: 4.7,
-      },
-      {
-        id: "h7",
-        name: "GMSH Sector 16",
-        beds: 30,
-        icu: 8,
-        ot: 4,
-        er: 12,
-        status: "ACCEPTING",
-        rating: 4.1,
-      },
-    ],
-    feed: [
-      {
-        id: 5,
-        text: "Mass casualty protocol activated",
-        time: "1 min ago",
-        type: "critical",
-      },
-      {
-        id: 6,
-        text: "AMB-3011 dispatched to Sector 17",
-        time: "5 min ago",
-        type: "urgent",
-      },
-    ],
-  },
-  Amritsar: {
-    stats: {
-      ambulances: 8,
-      hospitalsOnline: 5,
-      casesToday: 21,
-      livesImpacted: 21,
-      avgResponse: 7.1,
-    },
-    hospitals: [
-      {
-        id: "h8",
-        name: "Amandeep Hospital",
-        beds: 18,
-        icu: 5,
-        ot: 2,
-        er: 6,
-        status: "ACCEPTING",
-        rating: 4.6,
-      },
-      {
-        id: "h9",
-        name: "Guru Nanak Dev",
-        beds: 5,
-        icu: 1,
-        ot: 1,
-        er: 2,
-        status: "ACCEPTING",
-        rating: 4.2,
-      },
-    ],
-    feed: [
-      {
-        id: 7,
-        text: "Patient PT-8812 stabilized",
-        time: "10 min ago",
-        type: "stable",
-      },
-    ],
-  },
+  hospitals: [],
 };
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const { authHeaders } = useContext(AuthContext);
   const [selectedCity, setSelectedCity] = useState("Ludhiana");
-  const [data, setData] = useState(mockCityData["Ludhiana"]);
-  const [feed, setFeed] = useState(mockCityData["Ludhiana"].feed);
+  const [data, setData] = useState(EMPTY_DATA);
+  const [feed, setFeed] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Setup generic socket connection to intercept global feed
-    const socket = io("http://localhost:5001");
+  // ── P2-04: Fetch real dashboard data from the API ──
+  const fetchDashboard = async (city) => {
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `/api/admin/dashboard?city=${encodeURIComponent(city)}`,
+        {
+          headers: authHeaders(),
+        },
+      );
 
-    socket.on("admin:status_update", (event) => {
-      if (event.city === selectedCity || !event.city) {
-        setFeed((prev) =>
-          [
-            {
-              id: Date.now(),
-              text: event.message,
-              time: "Just now",
-              type: event.severity || "stable",
-            },
-            ...prev,
-          ].slice(0, 10),
-        ); // Keep last 10
+      if (!res.ok) {
+        console.warn("Failed to fetch admin dashboard:", res.status);
+        return;
       }
+
+      const json = await res.json();
+
+      // Map hospitals from API shape to component shape
+      const hospitals = (json.hospitals || []).map((h) => ({
+        id: h.id || h._id,
+        name: h.name,
+        beds: h.beds || "0/0",
+        icu: h.icu || "0/0",
+        ot: h.ot || "0/0",
+        er: h.er || "0/0",
+        status: STATUS_DISPLAY[h.status] || h.status || "ACCEPTING",
+        rating: h.rating || 0,
+      }));
+
+      setData({
+        stats: {
+          ambulances:
+            json.stats?.activeAmbulances ?? json.stats?.ambulances ?? 0,
+          hospitalsOnline: json.stats?.hospitalsOnline ?? 0,
+          casesToday: json.stats?.casesToday ?? json.casesToday ?? 0,
+          totalCases: json.stats?.totalCases ?? 0,
+          avgResponse: json.stats?.avgResponse ?? 0,
+        },
+        hospitals,
+      });
+    } catch (err) {
+      console.error("Error fetching admin dashboard:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch on mount and when city changes
+  useEffect(() => {
+    fetchDashboard(selectedCity);
+  }, [selectedCity]);
+
+  // ── P2-11: Use shared authenticated socket ──
+  useEffect(() => {
+    const socket = createSocket();
+
+    // Listen for real-time case events and build the live feed
+    socket.on("case:created", (event) => {
+      setFeed((prev) =>
+        [
+          {
+            id: Date.now(),
+            text: `New case ${event.caseId} created`,
+            time: "Just now",
+            type: "stable",
+          },
+          ...prev,
+        ].slice(0, 15),
+      );
+    });
+
+    socket.on("case:en_route", (event) => {
+      setFeed((prev) =>
+        [
+          {
+            id: Date.now(),
+            text: `Case ${event.caseId} en route to hospital`,
+            time: "Just now",
+            type: "urgent",
+          },
+          ...prev,
+        ].slice(0, 15),
+      );
+    });
+
+    socket.on("case:arrived", (event) => {
+      setFeed((prev) =>
+        [
+          {
+            id: Date.now(),
+            text: `Case ${event.caseId} arrived at hospital`,
+            time: "Just now",
+            type: "stable",
+          },
+          ...prev,
+        ].slice(0, 15),
+      );
+    });
+
+    socket.on("case:assigned", (event) => {
+      setFeed((prev) =>
+        [
+          {
+            id: Date.now(),
+            text: `Ambulance ${event.ambulanceId} dispatched for case ${event.caseId} (ETA: ${event.eta} min)`,
+            time: "Just now",
+            type: "urgent",
+          },
+          ...prev,
+        ].slice(0, 15),
+      );
+    });
+
+    socket.on("patient:vitals_update", (event) => {
+      const level = event.severity?.level || "unknown";
+      const feedType =
+        level === "critical"
+          ? "critical"
+          : level === "urgent"
+            ? "urgent"
+            : "stable";
+      setFeed((prev) =>
+        [
+          {
+            id: Date.now(),
+            text: `Vitals updated for case ${event.caseId} — severity: ${level.toUpperCase()}`,
+            time: "Just now",
+            type: feedType,
+          },
+          ...prev,
+        ].slice(0, 15),
+      );
+    });
+
+    socket.on("case:status_update", (event) => {
+      setFeed((prev) =>
+        [
+          {
+            id: Date.now(),
+            text: `Case ${event.caseId} status: ${event.status}`,
+            time: "Just now",
+            type: "stable",
+          },
+          ...prev,
+        ].slice(0, 15),
+      );
+      // Refresh dashboard stats when case status changes
+      fetchDashboard(selectedCity);
     });
 
     return () => socket.disconnect();
@@ -209,11 +187,10 @@ const AdminDashboard = () => {
   const handleCityChange = (e) => {
     const city = e.target.value;
     setSelectedCity(city);
-    setData(mockCityData[city]);
-    setFeed(mockCityData[city].feed);
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (statusStr) => {
+    const status = statusStr || "ACCEPTING";
     if (status === "ACCEPTING")
       return (
         <span className="px-2.5 py-1 rounded bg-green-100 text-green-800 font-bold text-xs uppercase tracking-wider">
@@ -256,17 +233,20 @@ const AdminDashboard = () => {
               >
                 Region:
               </label>
-              <select
+              <input
                 id="city-select"
+                type="text"
                 value={selectedCity}
                 onChange={handleCityChange}
-                className="px-4 py-2 border-2 border-slate-200 dark:border-gray-700 rounded-lg text-slate-800 dark:text-gray-200 font-bold outline-none focus:border-indigo-500 bg-white dark:bg-gray-900 shadow-sm"
-              >
-                <option value="Ludhiana">Ludhiana</option>
-                <option value="Chandigarh">Chandigarh</option>
-                <option value="Amritsar">Amritsar</option>
-              </select>
+                placeholder="Enter city name"
+                className="px-4 py-2 border-2 border-slate-200 dark:border-gray-700 rounded-lg text-slate-800 dark:text-gray-200 font-bold outline-none focus:border-indigo-500 bg-white dark:bg-gray-900 shadow-sm w-48"
+              />
             </div>
+            {loading && (
+              <span className="text-xs font-bold text-slate-400 dark:text-gray-500 animate-pulse">
+                Loading...
+              </span>
+            )}
           </div>
         </header>
 
@@ -298,10 +278,10 @@ const AdminDashboard = () => {
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-slate-100 dark:border-gray-800 p-5">
             <div className="text-xs font-bold text-slate-400 dark:text-gray-500 uppercase tracking-widest mb-1">
-              Lives Impacted
+              Total Cases
             </div>
             <div className="text-3xl font-black text-green-600">
-              {data.stats.livesImpacted}
+              {data.stats.totalCases}
             </div>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-slate-100 dark:border-gray-800 p-5">
@@ -309,7 +289,7 @@ const AdminDashboard = () => {
               Avg Response
             </div>
             <div className="text-3xl font-black text-indigo-600">
-              {data.stats.avgResponse}{" "}
+              {data.stats.avgResponse || "—"}{" "}
               <span className="text-lg font-medium tracking-normal text-slate-400 dark:text-gray-500">
                 min
               </span>

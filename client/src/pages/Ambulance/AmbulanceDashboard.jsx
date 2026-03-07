@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
 import { useAuth } from "../../context/useAuth";
 
 const DISPLAY_TO_API_STATUS = {
@@ -52,9 +52,6 @@ export default function AmbulanceDashboard() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const socketBaseUrl =
-    import.meta.env.VITE_SOCKET_URL || "http://localhost:5001";
-
   // Load current ambulance status + active case from backend on mount
   useEffect(() => {
     const bootstrap = async () => {
@@ -96,7 +93,7 @@ export default function AmbulanceDashboard() {
 
   // Socket Connection Effect
   useEffect(() => {
-    const socket = io(socketBaseUrl, {
+    const socket = createSocket({
       reconnectionAttempts: 5,
       timeout: 10000,
     });
@@ -136,7 +133,7 @@ export default function AmbulanceDashboard() {
     return () => {
       socket.disconnect();
     };
-  }, [socketBaseUrl]);
+  }, []);
 
   const handleStatusChange = async (newDisplayStatus) => {
     if (status === newDisplayStatus) return;

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
 
-// Mock Socket.io connection instance
-// In a real app, you might pass this down via Context
+// Socket.io connection instance
 let socket;
 
 const MOCK_INCOMING = [
@@ -72,7 +71,7 @@ const BedManagement = () => {
   const [selectedPatient, setSelectedPatient] = useState("");
 
   useEffect(() => {
-    socket = io("http://localhost:5001");
+    socket = createSocket();
     return () => {
       if (socket) socket.disconnect();
     };

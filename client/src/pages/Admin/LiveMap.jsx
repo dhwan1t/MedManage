@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
 
 // Map Dimensions constraint for relative SVGs
 const MAP_WIDTH = 1000;
@@ -56,7 +56,7 @@ const LiveMap = () => {
   const [activeCaseId, setActiveCaseId] = useState(null);
 
   useEffect(() => {
-    const socket = io("http://localhost:5001");
+    const socket = createSocket();
 
     // Simulate ambulance movement locally if socket isn't connected
     const moveTimer = setInterval(() => {

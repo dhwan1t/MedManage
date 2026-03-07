@@ -1,56 +1,226 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
+import AuthContext from "../../context/AuthContext";
 
 const HospitalDashboard = () => {
+  const { authHeaders } = useContext(AuthContext);
+
+  const [hospitalName, setHospitalName] = useState("Loading...");
+  const [hospitalId, setHospitalId] = useState(null);
   const [status, setStatus] = useState("ACCEPTING");
   const [lastUpdated, setLastUpdated] = useState(
     new Date().toLocaleTimeString(),
   );
 
-  const [stats, _setStats] = useState({
-    general: { available: 12, total: 48, label: "General Beds" },
-    icu: { available: 3, total: 10, label: "ICU Beds" },
-    ot: { available: 2, total: 4, label: "OT Theatres" },
-    er: { available: 5, total: 8, label: "ER Bays" },
+  // P2-10: Bed stats are now fetched from the API instead of hardcoded
+  const [stats, setStats] = useState({
+    general: { available: 0, total: 0, label: "General Beds" },
+    icu: { available: 0, total: 0, label: "ICU Beds" },
+    ot: { available: 0, total: 0, label: "OT Theatres" },
+    er: { available: 0, total: 0, label: "ER Bays" },
   });
 
   const [incomingPatients, setIncomingPatients] = useState([]);
 
+  // ── Fetch hospital info from API on mount (P2-10, P2-12) ──
   useEffect(() => {
-    // Connect to Socket.IO server
-    const socket = io("http://localhost:5001");
+    const fetchHospitalInfo = async () => {
+      try {
+        const response = await fetch("/api/hospital/info", {
+          headers: authHeaders(),
+        });
 
+        if (!response.ok) {
+          console.warn("Failed to fetch hospital info:", response.status);
+          setHospitalName("Hospital Dashboard");
+          return;
+        }
+
+        const data = await response.json();
+
+        // P2-12: Set real hospital name from DB
+        setHospitalName(data.name || "Hospital Dashboard");
+        setHospitalId(data._id || null);
+
+        // Map the DB status to the display status
+        const statusMap = {
+          accepting: "ACCEPTING",
+          at_capacity: "AT CAPACITY",
+          emergency_only: "EMERGENCY ONLY",
+        };
+        setStatus(statusMap[data.status] || "ACCEPTING");
+
+        // P2-10: Set real bed stats from DB
+        if (data.resources) {
+          setStats({
+            general: {
+              available: data.resources.generalBeds?.available ?? 0,
+              total: data.resources.generalBeds?.total ?? 0,
+              label: "General Beds",
+            },
+            icu: {
+              available: data.resources.icuBeds?.available ?? 0,
+              total: data.resources.icuBeds?.total ?? 0,
+              label: "ICU Beds",
+            },
+            ot: {
+              available: data.resources.otTheatres?.available ?? 0,
+              total: data.resources.otTheatres?.total ?? 0,
+              label: "OT Theatres",
+            },
+            er: {
+              available: data.resources.erBays?.available ?? 0,
+              total: data.resources.erBays?.total ?? 0,
+              label: "ER Bays",
+            },
+          });
+        }
+
+        setLastUpdated(new Date().toLocaleTimeString());
+      } catch (err) {
+        console.error("Error fetching hospital info:", err);
+        setHospitalName("Hospital Dashboard");
+      }
+    };
+
+    fetchHospitalInfo();
+  }, []);
+
+  // ── Socket.IO connection with authentication (P0-05, P1-03, P2-11) ──
+  useEffect(() => {
+    // P2-11: Use shared socket utility instead of hardcoded localhost:5001
+    // P0-05: Auth token is automatically attached by createSocket
+    const socket = createSocket();
+
+    // P1-03 FIX: The server now auto-joins the hospital room based on the
+    // JWT claims (hospitalId). We no longer need to manually emit join:hospital.
+    // However, for backwards compatibility and explicit intent, we still emit
+    // the join event if we know our hospitalId.
+    if (hospitalId) {
+      socket.emit("join:hospital", hospitalId);
+    }
+
+    // Listen for incoming ambulance dispatches
     socket.on("ambulance:dispatch", (data) => {
       setIncomingPatients((prev) => {
+        // Prevent duplicates
+        const exists = prev.some(
+          (p) => p.patientId === data.patientId || p.caseId === data.caseId,
+        );
+        if (exists) {
+          return prev
+            .map((p) =>
+              p.patientId === data.patientId || p.caseId === data.caseId
+                ? { ...p, ...data }
+                : p,
+            )
+            .sort((a, b) => (b.severityScore || 0) - (a.severityScore || 0));
+        }
         const newList = [...prev, data];
-        // Sort by highest severity score first
-        return newList.sort((a, b) => b.severityScore - a.severityScore);
+        return newList.sort(
+          (a, b) => (b.severityScore || 0) - (a.severityScore || 0),
+        );
       });
       setLastUpdated(new Date().toLocaleTimeString());
     });
 
+    // Listen for patient vitals updates (scoped to this hospital's room — P0-06)
     socket.on("patient:vitals_update", (data) => {
       setIncomingPatients((prev) => {
         const updated = prev.map((p) =>
-          p.patientId === data.patientId ? { ...p, ...data } : p,
+          p.patientId === data.patientId ||
+          p.caseId === data.caseId ||
+          p.caseObjectId === data.caseObjectId
+            ? {
+                ...p,
+                ...data,
+                severity: data.severity?.level
+                  ? data.severity.level.toUpperCase()
+                  : p.severity,
+                severityScore: data.severity?.score ?? p.severityScore,
+              }
+            : p,
         );
-        // Resort after update
-        return updated.sort((a, b) => b.severityScore - a.severityScore);
+        return updated.sort(
+          (a, b) => (b.severityScore || 0) - (a.severityScore || 0),
+        );
       });
       setLastUpdated(new Date().toLocaleTimeString());
+    });
+
+    // Listen for bed/resource updates from other staff or admin
+    socket.on("hospital:bed_update", (data) => {
+      if (data.resources) {
+        setStats({
+          general: {
+            available: data.resources.generalBeds?.available ?? 0,
+            total: data.resources.generalBeds?.total ?? 0,
+            label: "General Beds",
+          },
+          icu: {
+            available: data.resources.icuBeds?.available ?? 0,
+            total: data.resources.icuBeds?.total ?? 0,
+            label: "ICU Beds",
+          },
+          ot: {
+            available: data.resources.otTheatres?.available ?? 0,
+            total: data.resources.otTheatres?.total ?? 0,
+            label: "OT Theatres",
+          },
+          er: {
+            available: data.resources.erBays?.available ?? 0,
+            total: data.resources.erBays?.total ?? 0,
+            label: "ER Bays",
+          },
+        });
+        setLastUpdated(new Date().toLocaleTimeString());
+      }
+    });
+
+    // Listen for case arrival/completion to remove from incoming list
+    socket.on("case:arrived", (data) => {
+      setIncomingPatients((prev) =>
+        prev.filter(
+          (p) =>
+            p.caseId !== data.caseId && p.caseObjectId !== data.caseObjectId,
+        ),
+      );
+      setLastUpdated(new Date().toLocaleTimeString());
+    });
+
+    socket.on("case:status_update", (data) => {
+      if (data.status === "completed" || data.status === "arrived") {
+        setIncomingPatients((prev) =>
+          prev.filter((p) => p.caseId !== data.caseId),
+        );
+        setLastUpdated(new Date().toLocaleTimeString());
+      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [hospitalId]);
 
-  const toggleStatus = () => {
+  const toggleStatus = async () => {
     const statuses = ["ACCEPTING", "AT CAPACITY", "EMERGENCY ONLY"];
     const nextIdx = (statuses.indexOf(status) + 1) % statuses.length;
-    setStatus(statuses[nextIdx]);
+    const newStatus = statuses[nextIdx];
+
+    // Map display status to DB enum
+    const statusMap = {
+      ACCEPTING: "accepting",
+      "AT CAPACITY": "at_capacity",
+      "EMERGENCY ONLY": "emergency_only",
+    };
+
+    setStatus(newStatus);
     setLastUpdated(new Date().toLocaleTimeString());
+
+    // Persist the status change to the server if we had an endpoint
+    // For now, it's a local toggle — the hospital status change API
+    // can be added as a future enhancement.
   };
 
   const getStatusBadgeColors = () => {
@@ -63,7 +233,8 @@ const HospitalDashboard = () => {
 
   const renderStatCard = (key) => {
     const stat = stats[key];
-    const occupancy = ((stat.total - stat.available) / stat.total) * 100;
+    const total = stat.total || 1; // Avoid division by zero
+    const occupancy = ((total - stat.available) / total) * 100;
 
     // green < 70%, yellow 70-90%, red > 90%
     let progressColor = "bg-red-500";
@@ -89,7 +260,7 @@ const HospitalDashboard = () => {
         <div className="w-full bg-slate-100 dark:bg-gray-800 rounded-full h-2.5 mt-auto overflow-hidden">
           <div
             className={`h-2.5 rounded-full transition-all duration-500 ${progressColor}`}
-            style={{ width: `${occupancy}%` }}
+            style={{ width: `${Math.min(occupancy, 100)}%` }}
           ></div>
         </div>
         <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-gray-400 text-right">
@@ -114,7 +285,7 @@ const HospitalDashboard = () => {
         <header className="flex flex-col md:flex-row md:justify-between md:items-center bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-gray-800 gap-4">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              City Medical Center
+              {hospitalName}
             </h1>
             <p className="text-sm font-medium text-slate-500 dark:text-gray-400 mt-1 flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-slate-300"></span>
@@ -169,7 +340,7 @@ const HospitalDashboard = () => {
 
                 return (
                   <div
-                    key={patient.patientId || index}
+                    key={patient.patientId || patient.caseId || index}
                     className={`flex flex-col md:flex-row bg-white dark:bg-gray-900 border ${isHighestPriority ? "border-red-300 shadow-md ring-1 ring-red-100" : "border-slate-200 dark:border-gray-700"} rounded-xl p-5 gap-4 items-start md:items-center relative overflow-hidden`}
                   >
                     {isHighestPriority && (
@@ -181,12 +352,14 @@ const HospitalDashboard = () => {
                     >
                       <div className="flex items-center gap-3 mb-2">
                         <span className="font-bold text-lg text-slate-800 dark:text-gray-200">
-                          {patient.patientId}
+                          {patient.name ||
+                            patient.patientId ||
+                            "Unknown Patient"}
                         </span>
                         <span
                           className={`px-2.5 py-1 rounded border text-xs tracking-wide font-bold uppercase ${getSeverityBadge(patient.severity)}`}
                         >
-                          {patient.severity}
+                          {patient.severity || "UNKNOWN"}
                         </span>
                       </div>
                       <div className="text-sm font-medium text-slate-600 dark:text-gray-400 flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -195,7 +368,7 @@ const HospitalDashboard = () => {
                             ETA
                           </span>
                           <span className="text-slate-800 dark:text-gray-200">
-                            {patient.eta}
+                            {patient.eta || "Calculating..."}
                           </span>
                         </div>
                         <div className="flex flex-col">
@@ -206,6 +379,16 @@ const HospitalDashboard = () => {
                             {patient.resources?.join(", ") || "None"}
                           </span>
                         </div>
+                        {patient.vitals?.chiefComplaint && (
+                          <div className="flex flex-col">
+                            <span className="text-slate-400 dark:text-gray-500 text-xs uppercase mb-0.5">
+                              Chief Complaint
+                            </span>
+                            <span className="text-slate-800 dark:text-gray-200">
+                              {patient.vitals.chiefComplaint}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 

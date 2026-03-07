@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
 
 export default function RouteView() {
   const { caseId } = useParams();
@@ -8,11 +8,11 @@ export default function RouteView() {
 
   // Mock initial state
   const hospitalName = "City Central Hospital";
-  const [vitals] = useState({
+  const vitals = {
     hr: 110,
     bp: "140/90",
     spo2: 92,
-  });
+  };
 
   // Countdown timer state
   const [etaSeconds, setEtaSeconds] = useState(8 * 60); // 8:00
@@ -56,9 +56,7 @@ export default function RouteView() {
 
     // For demo purposes, after bed is reserved, update the message
     const t4 = setTimeout(() => {
-      setBedMessage((prev) =>
-        prev.includes("ICU") ? prev : "ICU Bed 4 reserved.",
-      );
+      setBedMessage("ICU Bed 4 reserved.");
     }, 3600);
 
     return () => {
@@ -71,12 +69,7 @@ export default function RouteView() {
 
   // Socket Connection for real-time updates
   useEffect(() => {
-    const socketUrl =
-      (typeof import.meta !== "undefined" &&
-        import.meta.env &&
-        import.meta.env.VITE_SOCKET_URL) ||
-      "http://localhost:5001";
-    const socket = io(socketUrl, {
+    const socket = createSocket({
       reconnectionAttempts: 5,
       timeout: 10000,
     });

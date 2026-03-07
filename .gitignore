@@ -1,4 +1,7 @@
 node_modules/
 client/node_modules/
 .env
+server/.env
 dist/
+client/dist/
+client/--force

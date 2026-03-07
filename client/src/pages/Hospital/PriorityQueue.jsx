@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
-import { io } from "socket.io-client";
+import { createSocket } from "../../utils/socket";
 
 // Initial mock data simulating the dynamic queue
 const MOCK_QUEUE = [
@@ -88,7 +88,7 @@ const PriorityQueue = () => {
 
   useEffect(() => {
     // Setup Socket Connection
-    const socket = io("http://localhost:5001");
+    const socket = createSocket();
 
     socket.on("ambulance:dispatch", (newPatient) => {
       setQueue((prev) => {
