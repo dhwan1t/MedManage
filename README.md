@@ -1,4 +1,4 @@
-# MediRoute AI
+# MedManage
 A platform for smart route operations.
 
 ## How to install
