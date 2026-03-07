@@ -1,16 +1,26 @@
 const mongoose = require('mongoose');
 
 const caseSchema = new mongoose.Schema({
-    patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' },
-    ambulanceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ambulance' },
-    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
-    status: {
+    caseId: {
         type: String,
-        enum: ['pending', 'assigned', 'en_route', 'completed'],
-        default: 'pending'
+        default: () => 'CASE-' + Date.now(),
+        unique: true
     },
-    severityLevel: { type: String },
-    mlRecommendation: { type: mongoose.Schema.Types.Mixed }, // JSON for AI recs
+    patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' },
+    ambulance: { type: mongoose.Schema.Types.ObjectId, ref: 'Ambulance' },
+    hospital: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
+    status: { type: String, enum: ['dispatched', 'en_route', 'arrived', 'completed'], default: 'dispatched' },
+    timeline: [{
+        event: { type: String },
+        timestamp: { type: Date, default: Date.now }
+    }],
+    aiRecommendations: [{
+        hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
+        score: { type: Number },
+        reason: { type: String },
+        distance: { type: Number }
+    }],
+    selectedHospital: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
     createdAt: { type: Date, default: Date.now }
 });
 

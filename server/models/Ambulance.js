@@ -1,21 +1,15 @@
 const mongoose = require('mongoose');
 
 const ambulanceSchema = new mongoose.Schema({
-    vehicleNumber: { type: String, required: true, unique: true },
-    driverName: { type: String, required: true },
+    ambulanceId: { type: String, required: true, unique: true },
+    status: { type: String, enum: ['available', 'on_call', 'off_duty'], default: 'off_duty' },
     currentLocation: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
-    },
-    status: {
-        type: String,
-        enum: ['available', 'busy', 'offline'],
-        default: 'offline'
+        lat: { type: Number },
+        lng: { type: Number }
     },
     assignedCase: { type: mongoose.Schema.Types.ObjectId, ref: 'Case' },
-    equipment: [{ type: String }]
+    operatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    createdAt: { type: Date, default: Date.now }
 });
-
-ambulanceSchema.index({ currentLocation: '2dsphere' });
 
 module.exports = mongoose.model('Ambulance', ambulanceSchema);
