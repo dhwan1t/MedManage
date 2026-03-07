@@ -56,20 +56,20 @@ Hospitals receive live pre-arrival alerts. Admins watch the whole city from a li
 
 ---
 
-## 🚨 Core Problem Statement
+##  Core Problem Statement
 
 Emergency medical response suffers from a fundamental coordination failure:
 
-- 🚑 **Ambulance crews** don't know in real-time which hospitals have ICU beds, OT theatres or ER bays available.
-- 🏥 **Hospitals** receive no advance warning before a critical patient arrives, preventing prep time.
-- 📍 **Routing decisions** are often made on intuition rather than data — sending a trauma patient to a hospital 2 km away that has no surgeon on duty.
-- 📊 **Administrators** have no centralized view of city-wide emergency resource utilization.
+- **Ambulance crews** don't know in real-time which hospitals have ICU beds, OT theatres or ER bays available.
+- **Hospitals** receive no advance warning before a critical patient arrives, preventing prep time.
+- **Routing decisions** are often made on intuition rather than data — sending a trauma patient to a hospital 2 km away that has no surgeon on duty.
+- **Administrators** have no centralized view of city-wide emergency resource utilization.
 
 MedManage solves all four with a single, unified platform.
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -114,7 +114,7 @@ MedManage solves all four with a single, unified platform.
 
 ---
 
-## 🧠 AI Engine — How It Works
+## AI Engine — How It Works
 
 The AI engine is the heart of MedManage. It doesn't call any external API — every decision is made locally using **evidence-based clinical scoring formulas** that are standard in pre-hospital emergency medicine.
 
