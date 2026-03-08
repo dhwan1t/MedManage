@@ -25,7 +25,7 @@ function normalizeStatus(input) {
 router.put(
   "/status",
   verifyToken,
-  verifyRole("ambulance"),
+  verifyRole("ambulance", "admin"),
   async (req, res) => {
     try {
       const rawStatus = req.body.status;
@@ -76,7 +76,7 @@ router.put(
 router.get(
   "/active-case",
   verifyToken,
-  verifyRole("ambulance"),
+  verifyRole("ambulance", "admin"),
   async (req, res) => {
     try {
       let ambulance = await Ambulance.findOne({
@@ -129,7 +129,7 @@ router.get(
 router.put(
   "/location",
   verifyToken,
-  verifyRole("ambulance"),
+  verifyRole("ambulance", "admin"),
   async (req, res) => {
     try {
       const { lat, lng } = req.body;

@@ -52,6 +52,16 @@ export default function AmbulanceDashboard() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  // Determine the current workflow step based on state
+  const getWorkflowStep = () => {
+    if (!activeCase) return 0; // No case yet
+    const vitalsEntered =
+      activeCase.severityScore !== "Pending Vitals" &&
+      typeof activeCase.severityScore === "number";
+    if (!vitalsEntered) return 1; // Case assigned, need vitals
+    return 2; // Vitals done, can view recommendations
+  };
+
   // Load current ambulance status + active case from backend on mount
   useEffect(() => {
     const bootstrap = async () => {
@@ -377,6 +387,52 @@ export default function AmbulanceDashboard() {
         {/* State 3: ON CALL (Active Case Exists) */}
         {status === "ON CALL" && activeCase && (
           <div className="space-y-6 animate-fadeIn">
+            {/* Workflow Step Indicator */}
+            {(() => {
+              const currentStep = getWorkflowStep();
+              const steps = [
+                { num: 1, label: "Case Assigned" },
+                { num: 2, label: "Enter Vitals" },
+                { num: 3, label: "View Recommendations" },
+              ];
+              return (
+                <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
+                    Workflow Progress — Step{" "}
+                    {currentStep < 2 ? currentStep + 1 : 3} of {steps.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {steps.map((step, idx) => {
+                      const done = currentStep > idx;
+                      const active = currentStep === idx;
+                      return (
+                        <div
+                          key={step.num}
+                          className="flex items-center gap-2 flex-1"
+                        >
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${done ? "bg-green-500 text-white" : active ? "bg-indigo-600 text-white ring-4 ring-indigo-100" : "bg-gray-200 text-gray-500"}`}
+                          >
+                            {done ? "✓" : step.num}
+                          </div>
+                          <span
+                            className={`text-xs font-bold hidden sm:inline ${done ? "text-green-600" : active ? "text-indigo-700" : "text-gray-400"}`}
+                          >
+                            {step.label}
+                          </span>
+                          {idx < steps.length - 1 && (
+                            <div
+                              className={`flex-1 h-0.5 ${done ? "bg-green-400" : "bg-gray-200"}`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-3">
                 <span className="flex h-3 w-3 relative">
@@ -478,6 +534,7 @@ export default function AmbulanceDashboard() {
               </div>
 
               <div className="p-6 bg-white flex flex-col sm:flex-row gap-4">
+                {/* Primary CTA: Enter Vitals */}
                 <button
                   onClick={() => navigate(`/ambulance/vitals/${activeCase.id}`)}
                   className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 transform active:scale-95"
@@ -495,14 +552,28 @@ export default function AmbulanceDashboard() {
                       d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
                     />
                   </svg>
-                  Enter Patient Vitals
+                  {getWorkflowStep() >= 2
+                    ? "Update Vitals"
+                    : "Enter Patient Vitals"}
                 </button>
 
+                {/* Secondary CTA: View Recommendations — disabled until vitals entered */}
                 <button
-                  onClick={() =>
-                    navigate(`/ambulance/recommendations/${activeCase.id}`)
-                  }
-                  className="flex-1 bg-white border-2 border-indigo-100 text-indigo-600 hover:bg-indigo-50 font-bold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2 transform active:scale-95"
+                  onClick={() => {
+                    if (getWorkflowStep() < 2) {
+                      setErrorMessage(
+                        "Please enter patient vitals before viewing hospital recommendations.",
+                      );
+                      return;
+                    }
+                    navigate(`/ambulance/recommendations/${activeCase.id}`);
+                  }}
+                  disabled={getWorkflowStep() < 2}
+                  className={`flex-1 font-bold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2 transform active:scale-95 ${
+                    getWorkflowStep() < 2
+                      ? "bg-gray-100 border-2 border-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-white border-2 border-indigo-100 text-indigo-600 hover:bg-indigo-50"
+                  }`}
                 >
                   <svg
                     className="w-5 h-5"
@@ -518,6 +589,11 @@ export default function AmbulanceDashboard() {
                     />
                   </svg>
                   View Recommendations
+                  {getWorkflowStep() < 2 && (
+                    <span className="text-[10px] ml-1 opacity-60">
+                      (enter vitals first)
+                    </span>
+                  )}
                 </button>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
 import { createSocket } from "../../utils/socket";
+import { useAuth } from "../../context/useAuth";
 
 // Initial mock data simulating the dynamic queue
 const MOCK_QUEUE = [
@@ -77,6 +78,7 @@ const INITIAL_SORTED_QUEUE = [...MOCK_QUEUE].sort(
 );
 
 const PriorityQueue = () => {
+  const { authHeaders } = useAuth();
   const [queue, setQueue] = useState(INITIAL_SORTED_QUEUE);
   const [selectedPatient, setSelectedPatient] = useState(
     INITIAL_SORTED_QUEUE.length > 0 ? INITIAL_SORTED_QUEUE[0] : null,
@@ -85,6 +87,67 @@ const PriorityQueue = () => {
 
   // Audio ref for alert sound on high priority new arrival
   const alertAudioRef = useRef(null);
+
+  // Fetch real active cases on mount
+  useEffect(() => {
+    async function fetchActiveCases() {
+      try {
+        const res = await fetch("/api/cases/hospital/active", {
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const cases = await res.json();
+        if (Array.isArray(cases) && cases.length > 0) {
+          const mapped = cases
+            .map((c) => {
+              const p = c.patient;
+              if (!p) return null;
+              return {
+                patientId: p._id || c.caseId,
+                age: p.vitals?.age || p.age || 0,
+                gender: p.gender || "U",
+                chiefComplaint: p.vitals?.chiefComplaint || "Unknown",
+                eta:
+                  c.estimatedEta ||
+                  (c.status === "en_route" ? "En Route" : "Pending"),
+                severity: p.severity || {
+                  score: 0,
+                  level: "STABLE",
+                  canWait: true,
+                  flags: [],
+                },
+                vitals: {
+                  heartRate: p.vitals?.heartRate || 0,
+                  systolic: p.vitals?.systolic || 0,
+                  diastolic: p.vitals?.diastolic || 0,
+                  oxygenSat: p.vitals?.oxygenSat || 0,
+                  temperature: p.vitals?.temperature || 0,
+                },
+                requiredResources: [],
+                timestamp: new Date(c.createdAt).getTime(),
+                caseId: c.caseId,
+              };
+            })
+            .filter(Boolean)
+            .sort(
+              (a, b) => (b.severity?.score || 0) - (a.severity?.score || 0),
+            );
+
+          if (mapped.length > 0) {
+            setQueue(mapped);
+            setSelectedPatient(mapped[0]);
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "Failed to fetch active cases, using mock data:",
+          err.message,
+        );
+        // Keep MOCK_QUEUE as fallback (already set as initial state)
+      }
+    }
+    fetchActiveCases();
+  }, []);
 
   useEffect(() => {
     // Setup Socket Connection

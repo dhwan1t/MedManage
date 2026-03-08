@@ -30,6 +30,7 @@ const caseSchema = new mongoose.Schema({
     },
   ],
   selectedHospital: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital" },
+  estimatedEta: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 

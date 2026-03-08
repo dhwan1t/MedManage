@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
 import { createSocket } from "../../utils/socket";
+import { useAuth } from "../../context/useAuth";
 
 // Socket.io connection instance
 let socket;
@@ -11,6 +12,7 @@ const MOCK_INCOMING = [
 ];
 
 const BedManagement = () => {
+  const { authHeaders } = useAuth();
   const [activeTab, setActiveTab] = useState("General");
 
   // Quick Update State
@@ -79,14 +81,10 @@ const BedManagement = () => {
 
   const emitAndUpdate = async (updatedData) => {
     try {
-      if (socket) {
-        socket.emit("hospital:bed_update", updatedData);
-      }
-
-      // Call standard API
+      // Call standard API — the server emits socket events on success
       await fetch("/api/hospital/availability", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(updatedData),
       });
     } catch (err) {

@@ -2,6 +2,22 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
 
 /**
+ * Helper: returns the dashboard path for a given role.
+ */
+function getDashboardForRole(role) {
+  switch (role) {
+    case "ambulance":
+      return "/ambulance";
+    case "hospital":
+      return "/hospital";
+    case "admin":
+      return "/admin";
+    default:
+      return "/";
+  }
+}
+
+/**
  * ProtectedRoute — wraps any route that requires authentication and optionally a specific role.
  *
  * Props:
@@ -11,11 +27,11 @@ import { useAuth } from "../../context/useAuth";
  * Behaviour:
  *   - If auth is still loading, show a simple spinner
  *   - If not authenticated, redirect to /login
- *   - If authenticated but role doesn't match, redirect to / (home)
+ *   - If authenticated but role doesn't match, redirect to their own dashboard (not /login)
  *   - Otherwise render children
  */
 export default function ProtectedRoute({ children, roles }) {
-  const { isAuthenticated, loading, hasRole } = useAuth();
+  const { isAuthenticated, loading, hasRole, user } = useAuth();
 
   if (loading) {
     return (
@@ -38,7 +54,9 @@ export default function ProtectedRoute({ children, roles }) {
   if (roles) {
     const allowedRoles = Array.isArray(roles) ? roles : [roles];
     if (!hasRole(allowedRoles)) {
-      return <Navigate to="/" replace />;
+      // Redirect to the user's own dashboard instead of /login or /
+      const destination = getDashboardForRole(user?.role);
+      return <Navigate to={destination} replace />;
     }
   }
 

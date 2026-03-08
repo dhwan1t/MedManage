@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
 import { createSocket } from "../../utils/socket";
+import { useAuth } from "../../context/useAuth";
 
 // Map Dimensions constraint for relative SVGs
 const MAP_WIDTH = 1000;
@@ -9,11 +10,11 @@ const MAP_HEIGHT = 800;
 // --- MOCK CONSTANTS ---
 
 const MOCK_HOSPITALS = [
-  { id: "h1", name: "City Med Center", x: 45, y: 35, status: "AVAILABLE" }, // Center-ish
-  { id: "h2", name: "Fortis Escorts", x: 20, y: 70, status: "AT CAPACITY" }, // Bottom Left
-  { id: "h3", name: "DMC Hospital", x: 75, y: 20, status: "AVAILABLE" }, // Top Right
-  { id: "h4", name: "Civil Hospital", x: 80, y: 65, status: "EMERGENCY ONLY" }, // Bottom Right
-  { id: "h5", name: "PGIMER", x: 30, y: 30, status: "AVAILABLE" }, // Top Left
+  { id: "h1", name: "City Med Center", x: 45, y: 35, status: "AVAILABLE" },
+  { id: "h2", name: "Fortis Escorts", x: 20, y: 70, status: "AT CAPACITY" },
+  { id: "h3", name: "DMC Hospital", x: 75, y: 20, status: "AVAILABLE" },
+  { id: "h4", name: "Civil Hospital", x: 80, y: 65, status: "EMERGENCY ONLY" },
+  { id: "h5", name: "PGIMER", x: 30, y: 30, status: "AVAILABLE" },
 ];
 
 const INITIAL_AMBULANCES = [
@@ -46,35 +47,119 @@ const INITIAL_AMBULANCES = [
     eta: null,
     caseId: null,
     severity: null,
-  }, // Stationary
+  },
 ];
+
+// Map API hospital status to display status
+function mapHospitalStatus(status) {
+  if (status === "accepting") return "AVAILABLE";
+  if (status === "at_capacity") return "AT CAPACITY";
+  return "EMERGENCY ONLY";
+}
+
+// Convert lat/lng to rough percentage positions on the map
+// Uses the range of Ludhiana-area coordinates seeded in the DB
+function latLngToPercent(lat, lng) {
+  const LAT_MIN = 30.87;
+  const LAT_MAX = 30.93;
+  const LNG_MIN = 75.82;
+  const LNG_MAX = 75.88;
+  const x = Math.max(
+    5,
+    Math.min(95, ((lng - LNG_MIN) / (LNG_MAX - LNG_MIN)) * 80 + 10),
+  );
+  const y = Math.max(
+    5,
+    Math.min(95, ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * 80 + 10),
+  );
+  return { x, y };
+}
 
 // --- COMPONENT ---
 
 const LiveMap = () => {
+  const { authHeaders } = useAuth();
+  const [hospitals, setHospitals] = useState(MOCK_HOSPITALS);
   const [ambulances, setAmbulances] = useState(INITIAL_AMBULANCES);
   const [activeCaseId, setActiveCaseId] = useState(null);
+
+  // Fetch real data from API on mount
+  useEffect(() => {
+    async function fetchLiveStatus() {
+      try {
+        const res = await fetch("/api/admin/live-status", {
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        // Map hospitals
+        if (Array.isArray(data.hospitals) && data.hospitals.length > 0) {
+          const mapped = data.hospitals.map((h) => {
+            const pos =
+              h.location && h.location.lat != null
+                ? latLngToPercent(h.location.lat, h.location.lng)
+                : { x: 50, y: 50 };
+            return {
+              id: h._id,
+              name: h.name,
+              x: pos.x,
+              y: pos.y,
+              status: mapHospitalStatus(h.status),
+            };
+          });
+          setHospitals(mapped);
+        }
+
+        // Map ambulances
+        if (Array.isArray(data.ambulances) && data.ambulances.length > 0) {
+          const mapped = data.ambulances.map((a) => {
+            const pos =
+              a.currentLocation && a.currentLocation.lat != null
+                ? latLngToPercent(a.currentLocation.lat, a.currentLocation.lng)
+                : { x: 50, y: 50 };
+            const isOnCall = a.status === "on_call" && a.activeCase;
+            return {
+              id: a.vehicleId || a._id,
+              status: isOnCall ? "EN_ROUTE" : "AVAILABLE",
+              x: pos.x,
+              y: pos.y,
+              targetHospital:
+                isOnCall && a.activeCase ? a.activeCase.selectedHospital : null,
+              eta: isOnCall ? "Calculating..." : null,
+              caseId: isOnCall && a.activeCase ? a.activeCase.caseId : null,
+              severity: isOnCall ? "URGENT" : null,
+            };
+          });
+          setAmbulances(mapped);
+        }
+      } catch (err) {
+        console.warn(
+          "Failed to fetch live status, using mock data:",
+          err.message,
+        );
+        // Keep mock data as fallback (already set as initial state)
+      }
+    }
+    fetchLiveStatus();
+  }, []);
 
   useEffect(() => {
     const socket = createSocket();
 
-    // Simulate ambulance movement locally if socket isn't connected
+    // Simulate ambulance movement locally
     const moveTimer = setInterval(() => {
       setAmbulances((prev) =>
         prev.map((amb) => {
           if (amb.status !== "EN_ROUTE" || !amb.targetHospital) return amb;
 
-          const target = MOCK_HOSPITALS.find(
-            (h) => h.id === amb.targetHospital,
-          );
+          const target = hospitals.find((h) => h.id === amb.targetHospital);
           if (!target) return amb;
 
-          // Vector math for linear interpolation toward target
           const dx = target.x - amb.x;
           const dy = target.y - amb.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          // If close enough, snap to target (Arrived)
           if (distance < 1) {
             return {
               ...amb,
@@ -85,8 +170,7 @@ const LiveMap = () => {
             };
           }
 
-          // Move slightly towards target
-          const speed = 0.5; // percent per tick
+          const speed = 0.5;
           return {
             ...amb,
             x: amb.x + (dx / distance) * speed,
@@ -94,14 +178,26 @@ const LiveMap = () => {
           };
         }),
       );
-    }, 1000); // 1 tick per second
+    }, 1000);
 
     socket.on("ambulance:eta_update", (data) => {
-      // Overwrite local simulation with truth data if backend emits it
       setAmbulances((prev) =>
-        prev.map((a) =>
-          a.id === data.id ? { ...a, x: data.x, y: data.y, eta: data.eta } : a,
-        ),
+        prev.map((a) => {
+          if (a.id === data.id || a.id === data.vehicleId) {
+            const updates = {};
+            if (data.x != null && data.y != null) {
+              updates.x = data.x;
+              updates.y = data.y;
+            } else if (data.lat != null && data.lng != null) {
+              const pos = latLngToPercent(data.lat, data.lng);
+              updates.x = pos.x;
+              updates.y = pos.y;
+            }
+            if (data.eta != null) updates.eta = data.eta;
+            return { ...a, ...updates };
+          }
+          return a;
+        }),
       );
     });
 
@@ -109,7 +205,7 @@ const LiveMap = () => {
       clearInterval(moveTimer);
       socket.disconnect();
     };
-  }, []);
+  }, [hospitals]);
 
   const getHospitalColor = (status) => {
     if (status === "AVAILABLE") return "bg-green-500 shadow-green-500/50";
@@ -201,7 +297,7 @@ const LiveMap = () => {
             {ambulances
               .filter((a) => a.status === "EN_ROUTE")
               .map((amb) => {
-                const target = MOCK_HOSPITALS.find(
+                const target = hospitals.find(
                   (h) => h.id === amb.targetHospital,
                 );
                 if (!target) return null;
@@ -225,7 +321,7 @@ const LiveMap = () => {
           </svg>
 
           {/* Hospital Markers */}
-          {MOCK_HOSPITALS.map((hospital) => (
+          {hospitals.map((hospital) => (
             <div
               key={hospital.id}
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group z-10"
@@ -304,7 +400,7 @@ const LiveMap = () => {
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {activeCases.map((amb) => {
-              const hName = MOCK_HOSPITALS.find(
+              const hName = hospitals.find(
                 (h) => h.id === amb.targetHospital,
               )?.name;
               const isSelected = activeCaseId === amb.caseId;

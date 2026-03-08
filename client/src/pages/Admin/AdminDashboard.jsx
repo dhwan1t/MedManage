@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useCallback } from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
 import { useNavigate } from "react-router-dom";
 import { createSocket } from "../../utils/socket";
@@ -29,6 +29,8 @@ const AdminDashboard = () => {
   const [data, setData] = useState(EMPTY_DATA);
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pendingAlerts, setPendingAlerts] = useState([]);
+  const [publishingId, setPublishingId] = useState(null);
 
   // ── P2-04: Fetch real dashboard data from the API ──
   const fetchDashboard = async (city) => {
@@ -78,10 +80,47 @@ const AdminDashboard = () => {
     }
   };
 
+  // Fetch pending alerts from admin API
+  const fetchPendingAlerts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/pending-alerts", {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingAlerts(data);
+      }
+    } catch (err) {
+      console.error("Error fetching pending alerts:", err);
+    }
+  }, []);
+
+  const handlePublishAlert = async (alertId) => {
+    setPublishingId(alertId);
+    try {
+      const res = await fetch(`/api/admin/alerts/${alertId}/publish`, {
+        method: "PUT",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+      });
+      if (res.ok) {
+        setPendingAlerts((prev) => prev.filter((a) => a._id !== alertId));
+      }
+    } catch (err) {
+      console.error("Error publishing alert:", err);
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
   // Fetch on mount and when city changes
   useEffect(() => {
     fetchDashboard(selectedCity);
   }, [selectedCity]);
+
+  // Fetch pending alerts on mount
+  useEffect(() => {
+    fetchPendingAlerts();
+  }, [fetchPendingAlerts]);
 
   // ── P2-11: Use shared authenticated socket ──
   useEffect(() => {
@@ -296,6 +335,78 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Pending Disease Alerts Section */}
+        {pendingAlerts.length > 0 && (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-800 overflow-hidden">
+            <div className="px-6 py-4 border-b border-orange-100 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/30 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-orange-800 dark:text-orange-300 flex items-center gap-2">
+                🦠 Pending Disease Alerts
+                <span className="bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200 text-xs font-bold px-2 py-0.5 rounded-md">
+                  {pendingAlerts.length}
+                </span>
+              </h2>
+              <span className="text-xs font-bold text-orange-500 dark:text-orange-400 uppercase tracking-widest">
+                Awaiting Approval
+              </span>
+            </div>
+            <div className="divide-y divide-orange-50 dark:divide-gray-800">
+              {pendingAlerts.map((alert) => (
+                <div
+                  key={alert._id}
+                  className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-1">
+                      <span className="font-bold text-slate-800 dark:text-gray-200">
+                        {alert.diseaseName || alert.title}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${
+                          alert.severity === "high"
+                            ? "bg-red-100 text-red-800"
+                            : alert.severity === "medium"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {alert.severity}
+                      </span>
+                    </div>
+                    <div className="text-sm text-slate-500 dark:text-gray-400 font-medium flex flex-wrap gap-x-4 gap-y-1">
+                      <span>
+                        Cases:{" "}
+                        <strong className="text-slate-700 dark:text-gray-300">
+                          {alert.caseCount || "N/A"}
+                        </strong>
+                      </span>
+                      <span>
+                        Reported by:{" "}
+                        <strong className="text-slate-700 dark:text-gray-300">
+                          {alert.reportedBy?.name || "Unknown Hospital"}
+                        </strong>
+                      </span>
+                      {alert.message && (
+                        <span className="text-slate-400 dark:text-gray-500 italic">
+                          {alert.message}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handlePublishAlert(alert._id)}
+                    disabled={publishingId === alert._id}
+                    className="px-4 py-2 rounded-lg bg-orange-600 text-white font-bold text-sm shadow-sm hover:bg-orange-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {publishingId === alert._id
+                      ? "Publishing..."
+                      : "Publish Alert"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Main Content Areas */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[700px]">

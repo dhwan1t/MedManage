@@ -8,6 +8,18 @@ const HospitalDashboard = () => {
 
   const [hospitalName, setHospitalName] = useState("Loading...");
   const [hospitalId, setHospitalId] = useState(null);
+
+  // Disease report modal state
+  const [showDiseaseModal, setShowDiseaseModal] = useState(false);
+  const [diseaseForm, setDiseaseForm] = useState({
+    diseaseName: "",
+    caseCount: "",
+    severity: "",
+    notes: "",
+  });
+  const [diseaseSubmitting, setDiseaseSubmitting] = useState(false);
+  const [diseaseSuccess, setDiseaseSuccess] = useState("");
+  const [diseaseError, setDiseaseError] = useState("");
   const [status, setStatus] = useState("ACCEPTING");
   const [lastUpdated, setLastUpdated] = useState(
     new Date().toLocaleTimeString(),
@@ -23,7 +35,7 @@ const HospitalDashboard = () => {
 
   const [incomingPatients, setIncomingPatients] = useState([]);
 
-  // ── Fetch hospital info from API on mount (P2-10, P2-12) ──
+  // ── Fetch hospital info + existing incoming cases from API on mount ──
   useEffect(() => {
     const fetchHospitalInfo = async () => {
       try {
@@ -41,7 +53,7 @@ const HospitalDashboard = () => {
 
         // P2-12: Set real hospital name from DB
         setHospitalName(data.name || "Hospital Dashboard");
-        setHospitalId(data._id || null);
+        setHospitalId(data._id ? data._id.toString() : null);
 
         // Map the DB status to the display status
         const statusMap = {
@@ -78,6 +90,34 @@ const HospitalDashboard = () => {
         }
 
         setLastUpdated(new Date().toLocaleTimeString());
+
+        // ── Fetch existing en_route cases so incoming ambulances survive page refresh ──
+        try {
+          const incomingRes = await fetch("/api/hospital/incoming", {
+            headers: authHeaders(),
+          });
+          if (incomingRes.ok) {
+            const incomingData = await incomingRes.json();
+            if (Array.isArray(incomingData) && incomingData.length > 0) {
+              setIncomingPatients((prev) => {
+                // Merge fetched cases with any that arrived via socket, deduplicating
+                const merged = [...prev];
+                incomingData.forEach((ic) => {
+                  const exists = merged.some(
+                    (p) =>
+                      p.patientId === ic.patientId || p.caseId === ic.caseId,
+                  );
+                  if (!exists) merged.push(ic);
+                });
+                return merged.sort(
+                  (a, b) => (b.severityScore || 0) - (a.severityScore || 0),
+                );
+              });
+            }
+          }
+        } catch (incErr) {
+          console.warn("Could not fetch incoming cases:", incErr);
+        }
       } catch (err) {
         console.error("Error fetching hospital info:", err);
         setHospitalName("Hospital Dashboard");
@@ -98,7 +138,8 @@ const HospitalDashboard = () => {
     // However, for backwards compatibility and explicit intent, we still emit
     // the join event if we know our hospitalId.
     if (hospitalId) {
-      socket.emit("join:hospital", hospitalId);
+      socket.emit("join:hospital", hospitalId.toString());
+      console.log("Joining hospital room with ID:", hospitalId.toString());
     }
 
     // Listen for incoming ambulance dispatches
@@ -209,7 +250,7 @@ const HospitalDashboard = () => {
     const newStatus = statuses[nextIdx];
 
     // Map display status to DB enum
-    const statusMap = {
+    const _statusMap = {
       ACCEPTING: "accepting",
       "AT CAPACITY": "at_capacity",
       "EMERGENCY ONLY": "emergency_only",
@@ -294,6 +335,12 @@ const HospitalDashboard = () => {
           </div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
+            <button
+              onClick={() => setShowDiseaseModal(true)}
+              className="px-4 py-2.5 rounded-full font-bold text-sm border border-orange-200 bg-orange-50 text-orange-700 transition-all hover:scale-105 active:scale-95 shadow-sm hover:bg-orange-100"
+            >
+              🦠 Report Disease Trend
+            </button>
             <button
               onClick={toggleStatus}
               className={`px-5 py-2.5 rounded-full font-bold text-sm border transition-all hover:scale-105 active:scale-95 shadow-sm ${getStatusBadgeColors()}`}
@@ -405,6 +452,186 @@ const HospitalDashboard = () => {
           )}
         </section>
       </div>
+
+      {/* Disease Report Modal */}
+      {showDiseaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-slate-200 dark:border-gray-700 max-w-md w-full p-6">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-gray-200 mb-1">
+              🦠 Report Disease Trend
+            </h2>
+            <p className="text-slate-500 dark:text-gray-400 text-sm mb-6">
+              This report will be sent to admin for review before being
+              published as a public alert.
+            </p>
+
+            {diseaseSuccess && (
+              <div className="mb-4 bg-green-50 border border-green-200 text-green-800 text-sm font-medium p-3 rounded-lg">
+                {diseaseSuccess}
+              </div>
+            )}
+            {diseaseError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-800 text-sm font-medium p-3 rounded-lg">
+                {diseaseError}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-gray-300 mb-1">
+                  Disease Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={diseaseForm.diseaseName}
+                  onChange={(e) =>
+                    setDiseaseForm((p) => ({
+                      ...p,
+                      diseaseName: e.target.value,
+                    }))
+                  }
+                  className="w-full border-2 border-slate-200 dark:border-gray-700 rounded-lg p-3 outline-none focus:border-orange-500 font-medium text-slate-800 dark:text-gray-200 bg-white dark:bg-gray-800 placeholder-gray-400"
+                  placeholder="e.g. Dengue, COVID-19"
+                  disabled={diseaseSubmitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-gray-300 mb-1">
+                  Case Count <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={diseaseForm.caseCount}
+                  onChange={(e) =>
+                    setDiseaseForm((p) => ({ ...p, caseCount: e.target.value }))
+                  }
+                  className="w-full border-2 border-slate-200 dark:border-gray-700 rounded-lg p-3 outline-none focus:border-orange-500 font-medium text-slate-800 dark:text-gray-200 bg-white dark:bg-gray-800 placeholder-gray-400"
+                  placeholder="Number of cases observed"
+                  disabled={diseaseSubmitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-gray-300 mb-1">
+                  Severity <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={diseaseForm.severity}
+                  onChange={(e) =>
+                    setDiseaseForm((p) => ({ ...p, severity: e.target.value }))
+                  }
+                  className="w-full border-2 border-slate-200 dark:border-gray-700 rounded-lg p-3 outline-none focus:border-orange-500 font-medium text-slate-800 dark:text-gray-200 bg-white dark:bg-gray-800"
+                  disabled={diseaseSubmitting}
+                >
+                  <option value="" disabled>
+                    Select severity
+                  </option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-gray-300 mb-1">
+                  Notes{" "}
+                  <span className="text-gray-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  value={diseaseForm.notes}
+                  onChange={(e) =>
+                    setDiseaseForm((p) => ({ ...p, notes: e.target.value }))
+                  }
+                  rows={3}
+                  className="w-full border-2 border-slate-200 dark:border-gray-700 rounded-lg p-3 outline-none focus:border-orange-500 font-medium text-slate-800 dark:text-gray-200 bg-white dark:bg-gray-800 placeholder-gray-400 resize-none"
+                  placeholder="Additional details about the trend..."
+                  disabled={diseaseSubmitting}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-gray-800">
+                <button
+                  onClick={() => {
+                    setShowDiseaseModal(false);
+                    setDiseaseSuccess("");
+                    setDiseaseError("");
+                    setDiseaseForm({
+                      diseaseName: "",
+                      caseCount: "",
+                      severity: "",
+                      notes: "",
+                    });
+                  }}
+                  disabled={diseaseSubmitting}
+                  className="flex-1 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-gray-600 font-bold text-slate-600 dark:text-gray-400 hover:bg-slate-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    setDiseaseError("");
+                    setDiseaseSuccess("");
+
+                    if (
+                      !diseaseForm.diseaseName.trim() ||
+                      !diseaseForm.caseCount ||
+                      !diseaseForm.severity
+                    ) {
+                      setDiseaseError("Please fill in all required fields.");
+                      return;
+                    }
+
+                    setDiseaseSubmitting(true);
+                    try {
+                      const res = await fetch("/api/hospital/report-disease", {
+                        method: "POST",
+                        headers: authHeaders({
+                          "Content-Type": "application/json",
+                        }),
+                        body: JSON.stringify({
+                          diseaseName: diseaseForm.diseaseName.trim(),
+                          caseCount: parseInt(diseaseForm.caseCount, 10),
+                          severity: diseaseForm.severity,
+                          notes: diseaseForm.notes.trim(),
+                        }),
+                      });
+
+                      const data = await res.json().catch(() => ({}));
+
+                      if (!res.ok) {
+                        setDiseaseError(data.msg || "Failed to submit report.");
+                      } else {
+                        setDiseaseSuccess("Report submitted for admin review.");
+                        setDiseaseForm({
+                          diseaseName: "",
+                          caseCount: "",
+                          severity: "",
+                          notes: "",
+                        });
+                        setTimeout(() => {
+                          setShowDiseaseModal(false);
+                          setDiseaseSuccess("");
+                        }, 2000);
+                      }
+                    } catch (err) {
+                      console.error("Disease report error:", err);
+                      setDiseaseError("Network error. Please try again.");
+                    } finally {
+                      setDiseaseSubmitting(false);
+                    }
+                  }}
+                  disabled={diseaseSubmitting}
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-orange-600 text-white font-bold shadow-md shadow-orange-200 hover:bg-orange-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {diseaseSubmitting ? "Submitting..." : "Submit Report"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

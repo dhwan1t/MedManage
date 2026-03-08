@@ -71,20 +71,36 @@ export default function Navbar() {
               </span>
             </Link>
 
-            {/* Public links (always visible) */}
-            <Link to="/alerts" className={linkClass("/alerts")}>
-              Alerts
-            </Link>
-            <Link to="/symptoms" className={linkClass("/symptoms")}>
-              Symptoms
-            </Link>
-
-            {/* Role-specific links */}
-            {isAuthenticated && user?.role === "ambulance" && (
-              <Link to="/ambulance" className={linkClass("/ambulance")}>
-                Dashboard
-              </Link>
+            {/* PUBLIC role links (or not authenticated) */}
+            {(!isAuthenticated || user?.role === "public") && (
+              <>
+                <Link to="/alerts" className={linkClass("/alerts")}>
+                  Disease Alerts
+                </Link>
+                <Link to="/symptoms" className={linkClass("/symptoms")}>
+                  Symptom Checker
+                </Link>
+                {isAuthenticated && (
+                  <Link
+                    to="/request-ambulance"
+                    className={linkClass("/request-ambulance")}
+                  >
+                    Request Ambulance
+                  </Link>
+                )}
+              </>
             )}
+
+            {/* AMBULANCE role links */}
+            {isAuthenticated && user?.role === "ambulance" && (
+              <>
+                <Link to="/ambulance" className={linkClass("/ambulance")}>
+                  Dashboard
+                </Link>
+              </>
+            )}
+
+            {/* HOSPITAL role links */}
             {isAuthenticated && user?.role === "hospital" && (
               <>
                 <Link to="/hospital" className={linkClass("/hospital")}>
@@ -94,10 +110,18 @@ export default function Navbar() {
                   to="/hospital/beds"
                   className={linkClass("/hospital/beds")}
                 >
-                  Beds
+                  Bed Management
+                </Link>
+                <Link
+                  to="/hospital/queue"
+                  className={linkClass("/hospital/queue")}
+                >
+                  Priority Queue
                 </Link>
               </>
             )}
+
+            {/* ADMIN role links */}
             {isAuthenticated && user?.role === "admin" && (
               <>
                 <Link to="/admin" className={linkClass("/admin")}>
@@ -109,8 +133,14 @@ export default function Navbar() {
                 >
                   Analytics
                 </Link>
+                <Link
+                  to="/admin/ratings"
+                  className={linkClass("/admin/ratings")}
+                >
+                  Hospital Ratings
+                </Link>
                 <Link to="/admin/map" className={linkClass("/admin/map")}>
-                  Map
+                  Live Map
                 </Link>
               </>
             )}
@@ -118,15 +148,17 @@ export default function Navbar() {
 
           {/* Right: Demo Mode + Auth */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Demo Mode — always visible, visually prominent */}
-            <Link
-              to="/demo"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/30 hover:scale-105 active:scale-95 transition-all"
-            >
-              <span className="w-2 h-2 rounded-full bg-green-300 animate-pulse shadow-[0_0_6px_rgba(134,239,172,0.8)]" />
-              <span className="hidden sm:inline">Demo Mode</span>
-              <span className="sm:hidden">Demo</span>
-            </Link>
+            {/* Demo Mode — only visible when logged in */}
+            {isAuthenticated && (
+              <Link
+                to="/demo"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/30 hover:scale-105 active:scale-95 transition-all"
+              >
+                <span className="w-2 h-2 rounded-full bg-green-300 animate-pulse shadow-[0_0_6px_rgba(134,239,172,0.8)]" />
+                <span className="hidden sm:inline">Demo Mode</span>
+                <span className="sm:hidden">Demo</span>
+              </Link>
+            )}
 
             {isAuthenticated ? (
               <div className="flex items-center gap-2">
@@ -153,9 +185,9 @@ export default function Navbar() {
             ) : (
               <Link
                 to="/login"
-                className="px-3 py-1.5 rounded-lg text-sm font-semibold text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
               >
-                Sign In
+                Login
               </Link>
             )}
           </div>

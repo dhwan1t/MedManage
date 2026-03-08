@@ -4,6 +4,7 @@ const Ambulance = require("../models/Ambulance");
 const Case = require("../models/Case");
 const Patient = require("../models/Patient");
 const User = require("../models/User");
+const Alert = require("../models/Alert");
 const { verifyToken, verifyRole } = require("../middleware/auth");
 
 // ═════════════════════════════════════════════════════════════
@@ -840,5 +841,228 @@ router.get("/users", verifyToken, verifyRole("admin"), async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 });
+
+// ═════════════════════════════════════════════════════════════
+// GET /api/admin/pending-alerts — List all pending (inactive) alerts
+// ═════════════════════════════════════════════════════════════
+router.get(
+  "/pending-alerts",
+  verifyToken,
+  verifyRole("admin"),
+  async (req, res) => {
+    try {
+      const alerts = await Alert.find({ active: false })
+        .populate("reportedBy", "name")
+        .sort({ createdAt: -1 });
+
+      res.json(alerts);
+    } catch (err) {
+      console.error("admin GET /pending-alerts error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
+
+// ═════════════════════════════════════════════════════════════
+// PUT /api/admin/alerts/:alertId/publish — Publish a pending alert
+// ═════════════════════════════════════════════════════════════
+router.put(
+  "/alerts/:alertId/publish",
+  verifyToken,
+  verifyRole("admin"),
+  async (req, res) => {
+    try {
+      const alert = await Alert.findById(req.params.alertId);
+
+      if (!alert) {
+        return res.status(404).json({ msg: "Alert not found" });
+      }
+
+      alert.active = true;
+      await alert.save();
+
+      // Emit socket event so public DiseaseAlerts page can update in real-time
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("alert:published", alert);
+      }
+
+      res.json({ alert });
+    } catch (err) {
+      if (err.kind === "ObjectId" || err.name === "CastError") {
+        return res.status(404).json({ msg: "Alert not found" });
+      }
+      console.error("admin PUT /alerts/:alertId/publish error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
+
+// ═════════════════════════════════════════════════════════════
+// GET /api/admin/live-status — Hospitals + Ambulances for LiveMap
+// ═════════════════════════════════════════════════════════════
+router.get(
+  "/live-status",
+  verifyToken,
+  verifyRole("admin"),
+  async (req, res) => {
+    try {
+      const hospitals = await Hospital.find().select(
+        "name location status resources",
+      );
+      const ambulances = await Ambulance.find().select(
+        "ambulanceId status currentLocation",
+      );
+
+      // For each ambulance that is on_call, find its active case
+      const ambulanceData = await Promise.all(
+        ambulances.map(async (amb) => {
+          let activeCase = null;
+          if (amb.status === "on_call") {
+            const c = await Case.findOne({
+              ambulance: amb._id,
+              status: { $in: ["dispatched", "en_route"] },
+            }).select("caseId selectedHospital");
+            if (c) {
+              activeCase = {
+                caseId: c.caseId,
+                selectedHospital: c.selectedHospital,
+              };
+            }
+          }
+          return {
+            _id: amb._id,
+            vehicleId: amb.ambulanceId,
+            status: amb.status,
+            currentLocation: amb.currentLocation,
+            activeCase,
+          };
+        }),
+      );
+
+      res.json({
+        hospitals: hospitals.map((h) => ({
+          _id: h._id,
+          name: h.name,
+          location: h.location,
+          status: h.status,
+          resources: h.resources,
+        })),
+        ambulances: ambulanceData,
+      });
+    } catch (err) {
+      console.error("admin GET /live-status error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
+
+// ═════════════════════════════════════════════════════════════
+// PUT /api/admin/hospitals/:id/webhook
+// Configure a hospital's webhook URL and enabled status.
+// Admin only.
+// ═════════════════════════════════════════════════════════════
+router.put(
+  "/hospitals/:id/webhook",
+  verifyToken,
+  verifyRole("admin"),
+  async (req, res) => {
+    try {
+      const { webhookUrl, webhookEnabled } = req.body;
+
+      const hospital = await Hospital.findById(req.params.id);
+      if (!hospital) {
+        return res.status(404).json({ msg: "Hospital not found" });
+      }
+
+      // Update only the fields that were provided
+      if (webhookUrl !== undefined) {
+        hospital.webhookUrl = webhookUrl || null;
+      }
+      if (webhookEnabled !== undefined) {
+        hospital.webhookEnabled = !!webhookEnabled;
+      }
+
+      await hospital.save();
+
+      res.json({
+        hospitalId: hospital._id,
+        webhookUrl: hospital.webhookUrl,
+        webhookEnabled: hospital.webhookEnabled,
+      });
+    } catch (err) {
+      if (err.kind === "ObjectId" || err.name === "CastError") {
+        return res.status(404).json({ msg: "Hospital not found" });
+      }
+      console.error("admin PUT /hospitals/:id/webhook error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
+
+// ═════════════════════════════════════════════════════════════
+// POST /api/admin/hospitals/:id/webhook/test
+// Send a test webhook to verify the hospital's configured URL.
+// Admin only.
+// ═════════════════════════════════════════════════════════════
+router.post(
+  "/hospitals/:id/webhook/test",
+  verifyToken,
+  verifyRole("admin"),
+  async (req, res) => {
+    try {
+      const hospital = await Hospital.findById(req.params.id);
+      if (!hospital) {
+        return res.status(404).json({ msg: "Hospital not found" });
+      }
+
+      if (!hospital.webhookUrl) {
+        return res.status(400).json({
+          success: false,
+          statusCode: null,
+          message: "No webhook URL configured for this hospital",
+        });
+      }
+
+      const { sendWebhook } = require("../utils/webhook");
+
+      // Temporarily treat as enabled for the test, regardless of webhookEnabled flag
+      const testHospital = {
+        _id: hospital._id,
+        webhookUrl: hospital.webhookUrl,
+        webhookEnabled: true,
+      };
+
+      const result = await sendWebhook(testHospital, "TEST", {
+        message: "MedManage webhook test",
+        hospitalName: hospital.name,
+        testedAt: new Date().toISOString(),
+      });
+
+      if (result && result.success) {
+        res.json({
+          success: true,
+          statusCode: result.statusCode,
+          message: "Webhook test delivered successfully",
+        });
+      } else {
+        res.json({
+          success: false,
+          statusCode: null,
+          message: "Webhook test failed — check the URL and try again",
+        });
+      }
+    } catch (err) {
+      if (err.kind === "ObjectId" || err.name === "CastError") {
+        return res.status(404).json({ msg: "Hospital not found" });
+      }
+      console.error(
+        "admin POST /hospitals/:id/webhook/test error:",
+        err.message,
+      );
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
 
 module.exports = router;

@@ -19,10 +19,10 @@ const seedData = async () => {
     let passwordWasGenerated = false;
 
     if (!SEED_PASSWORD) {
-      SEED_PASSWORD = crypto.randomBytes(16).toString("hex");
+      SEED_PASSWORD = "pass123";
       passwordWasGenerated = true;
       console.warn(
-        "⚠️  SEED_PASSWORD not set in .env — generated a random password for demo users.",
+        "⚠️  SEED_PASSWORD not set in .env — using default password 'pass123' for demo users.",
       );
     }
 
@@ -35,7 +35,7 @@ const seedData = async () => {
     await mongoose.connect(MONGO_URI);
     console.log("Connected to MongoDB for seeding...\n");
 
-    // ── Clear ALL collections for a clean slate ──
+    // Clear ALL collections for a clean slate
     await Hospital.deleteMany({});
     await Ambulance.deleteMany({});
     await Alert.deleteMany({});
@@ -44,7 +44,7 @@ const seedData = async () => {
     await User.deleteMany({});
     console.log("🗑️  Cleared all collections");
 
-    // ── Hash the shared demo password ──
+    // Hash the shared demo password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(SEED_PASSWORD, salt);
 
@@ -260,6 +260,7 @@ const seedData = async () => {
         affectedZones: ["Zone 2", "Zone 4"],
         city: "Ludhiana",
         active: true,
+        symptoms: ["High Fever", "Joint Pain", "Rash", "Headache", "Eye Pain"],
       },
       {
         type: "emergency",
@@ -269,6 +270,7 @@ const seedData = async () => {
         affectedZones: ["Highway NH44"],
         city: "Ludhiana",
         active: true,
+        symptoms: [],
       },
       {
         type: "disease",
@@ -278,6 +280,7 @@ const seedData = async () => {
         affectedZones: ["Zone 1", "Zone 3", "Zone 5"],
         city: "Ludhiana",
         active: true,
+        symptoms: ["Fever", "Cough", "Sore Throat", "Body Ache", "Fatigue"],
       },
     ]);
     console.log(`✅ ${alerts.length} Alerts seeded`);

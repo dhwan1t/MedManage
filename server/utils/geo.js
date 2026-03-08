@@ -15,6 +15,20 @@
  * @returns {number} Distance in kilometers
  */
 function getDistance(lat1, lng1, lat2, lng2) {
+  // Guard: if any coordinate is null, undefined, or NaN, return a safe fallback
+  if (
+    lat1 == null ||
+    lng1 == null ||
+    lat2 == null ||
+    lng2 == null ||
+    isNaN(lat1) ||
+    isNaN(lng1) ||
+    isNaN(lat2) ||
+    isNaN(lng2)
+  ) {
+    return 5.0; // Default fallback distance in km
+  }
+
   const R = 6371; // Radius of the earth in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;

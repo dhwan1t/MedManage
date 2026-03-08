@@ -164,6 +164,51 @@ router.get(
 );
 
 // ═════════════════════════════════════════════════════════════
+// GET /api/cases/hospital/active — Active cases for the logged-in hospital
+// Returns cases where selectedHospital matches the user's hospitalId
+// and status is 'en_route' or 'dispatched'.
+// ═════════════════════════════════════════════════════════════
+router.get(
+  "/hospital/active",
+  verifyToken,
+  verifyRole("hospital", "admin"),
+  async (req, res) => {
+    try {
+      const { role, hospitalId, userId } = req.user;
+
+      let hId = hospitalId;
+      if (!hId && role === "hospital") {
+        const UserModel = require("../models/User");
+        const dbUser = await UserModel.findById(userId);
+        if (dbUser) hId = dbUser.hospitalId;
+      }
+
+      const filter = {
+        status: { $in: ["en_route", "dispatched"] },
+      };
+
+      // Admin sees all active cases; hospital sees only their own
+      if (role === "hospital" && hId) {
+        filter.selectedHospital = hId;
+      } else if (role === "hospital") {
+        return res.json([]);
+      }
+
+      const cases = await Case.find(filter)
+        .populate("patient")
+        .populate("ambulance")
+        .populate("selectedHospital")
+        .sort({ createdAt: -1 });
+
+      res.json(cases);
+    } catch (err) {
+      console.error("cases GET /hospital/active error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
+
+// ═════════════════════════════════════════════════════════════
 // GET /api/cases/:id — Fetch a single case with populated data
 // ═════════════════════════════════════════════════════════════
 router.get(
@@ -331,6 +376,35 @@ router.put(
         mapped.conditions = mapped.conditions.filter((c) => c && c !== "None");
       }
 
+      if (vitalsInput.patientLat != null) {
+        mapped.patientLat = parseFloat(vitalsInput.patientLat);
+      }
+
+      if (vitalsInput.patientLng != null) {
+        mapped.patientLng = parseFloat(vitalsInput.patientLng);
+      }
+
+      // ── Extended assessment fields (P3 — 9 new scoring models) ──
+      if (vitalsInput.onSupplementalOxygen != null) {
+        mapped.onSupplementalOxygen = !!vitalsInput.onSupplementalOxygen;
+      }
+
+      if (vitalsInput.facialDroop != null) {
+        mapped.facialDroop = !!vitalsInput.facialDroop;
+      }
+
+      if (vitalsInput.armDrift != null) {
+        mapped.armDrift = !!vitalsInput.armDrift;
+      }
+
+      if (vitalsInput.speechAbnormality != null) {
+        mapped.speechAbnormality = !!vitalsInput.speechAbnormality;
+      }
+
+      if (vitalsInput.nursingHomeResident != null) {
+        mapped.nursingHomeResident = !!vitalsInput.nursingHomeResident;
+      }
+
       // ── Merge into existing vitals ──
       const existingVitals = patientObj.vitals
         ? patientObj.vitals.toObject
@@ -450,6 +524,27 @@ router.get(
           : { ...patientObj.vitals }
         : {};
 
+      // ── Fallback: if vitals lack patient coords, use ambulance's currentLocation ──
+      if (vitals.patientLat == null || vitals.patientLng == null) {
+        if (caseObj.ambulance) {
+          const ambulance = await Ambulance.findById(caseObj.ambulance);
+          if (ambulance && ambulance.currentLocation) {
+            if (
+              ambulance.currentLocation.lat != null &&
+              vitals.patientLat == null
+            ) {
+              vitals.patientLat = ambulance.currentLocation.lat;
+            }
+            if (
+              ambulance.currentLocation.lng != null &&
+              vitals.patientLng == null
+            ) {
+              vitals.patientLng = ambulance.currentLocation.lng;
+            }
+          }
+        }
+      }
+
       // ── Pass severity, vitals, and all hospitals to the AI Ranker ──
       const rankedHospitals = rankHospitals(severity, vitals, hospitals);
 
@@ -564,6 +659,10 @@ router.put(
       // ── Emit to specific hospital's room (not globally) ──
       const io = req.app.get("io");
       if (io) {
+        console.log(
+          "Emitting ambulance:dispatch to room:",
+          hospitalId.toString(),
+        );
         io.to(hospitalId.toString()).emit("ambulance:dispatch", patientData);
 
         // Also emit to admin room for dashboards
@@ -572,6 +671,41 @@ router.put(
           hospitalId,
           status: "en_route",
         });
+      }
+
+      // ── Send webhook to hospital's external system (fire-and-forget) ──
+      try {
+        const { sendWebhook } = require("../utils/webhook");
+        const webhookHospital = await Hospital.findById(hospitalId);
+        if (webhookHospital) {
+          const webhookAmbulance = caseObj.ambulance
+            ? await Ambulance.findById(caseObj.ambulance)
+            : null;
+          await sendWebhook(webhookHospital, "AMBULANCE_DISPATCHED", {
+            caseId: caseObj._id,
+            patientSeverity:
+              patientObj && patientObj.severity
+                ? patientObj.severity.score
+                : null,
+            patientLevel:
+              patientObj && patientObj.severity
+                ? patientObj.severity.level
+                : null,
+            flags:
+              patientObj && patientObj.severity
+                ? patientObj.severity.flags
+                : [],
+            vitals: patientObj ? patientObj.vitals : {},
+            estimatedArrivalMinutes: patientData.eta || null,
+            ambulanceId: webhookAmbulance ? webhookAmbulance.ambulanceId : null,
+          });
+        }
+      } catch (webhookErr) {
+        // Never let webhook errors break the main flow
+        console.error(
+          "Webhook dispatch error (non-fatal):",
+          webhookErr.message,
+        );
       }
 
       res.json({

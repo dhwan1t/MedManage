@@ -306,7 +306,7 @@ export default function RequestAmbulance() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Full Name */}
               <div className="space-y-1">
-                <label className="block text-sm font-bold text-gray-700">
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
                   Full Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -315,7 +315,7 @@ export default function RequestAmbulance() {
                   value={formData.fullName}
                   onChange={handleChange}
                   disabled={isSubmitting}
-                  className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 ${
+                  className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 text-gray-900 bg-white placeholder-gray-400 ${
                     errors.fullName
                       ? "border-red-500 bg-red-50"
                       : "border-gray-300"
@@ -331,7 +331,7 @@ export default function RequestAmbulance() {
 
               {/* Phone Number */}
               <div className="space-y-1">
-                <label className="block text-sm font-bold text-gray-700">
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
                   Phone Number <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -340,7 +340,7 @@ export default function RequestAmbulance() {
                   value={formData.phone}
                   onChange={handleChange}
                   disabled={isSubmitting}
-                  className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 ${
+                  className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 text-gray-900 bg-white placeholder-gray-400 ${
                     errors.phone
                       ? "border-red-500 bg-red-50"
                       : "border-gray-300"
@@ -358,7 +358,7 @@ export default function RequestAmbulance() {
             {/* Location */}
             <div className="space-y-1">
               <div className="flex justify-between items-end mb-1 text-sm">
-                <label className="font-bold text-gray-700">
+                <label className="font-bold text-gray-700 dark:text-gray-200">
                   Location <span className="text-red-500">*</span>
                 </label>
                 <button
@@ -395,7 +395,7 @@ export default function RequestAmbulance() {
                 value={formData.locationText}
                 onChange={handleChange}
                 disabled={isSubmitting}
-                className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 ${
+                className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 text-gray-900 bg-white placeholder-gray-400 ${
                   errors.locationText
                     ? "border-red-500 bg-red-50"
                     : "border-gray-300"
@@ -416,7 +416,7 @@ export default function RequestAmbulance() {
 
             {/* Emergency Type */}
             <div className="space-y-1">
-              <label className="block text-sm font-bold text-gray-700">
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
                 Type of Emergency <span className="text-red-500">*</span>
               </label>
               <div className="relative">
@@ -425,7 +425,7 @@ export default function RequestAmbulance() {
                   value={formData.emergencyType}
                   onChange={handleChange}
                   disabled={isSubmitting}
-                  className={`w-full p-3 border rounded-xl appearance-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 bg-white ${
+                  className={`w-full p-3 border rounded-xl appearance-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 text-gray-900 bg-white placeholder-gray-400 ${
                     errors.emergencyType
                       ? "border-red-500 bg-red-50"
                       : "border-gray-300"
@@ -465,7 +465,7 @@ export default function RequestAmbulance() {
 
             {/* Additional Notes */}
             <div className="space-y-1">
-              <label className="block text-sm font-bold text-gray-700">
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
                 Additional Notes{" "}
                 <span className="text-gray-400 font-normal">(Optional)</span>
               </label>
@@ -475,7 +475,7 @@ export default function RequestAmbulance() {
                 onChange={handleChange}
                 disabled={isSubmitting}
                 rows={3}
-                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 resize-none"
+                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-shadow disabled:bg-gray-100 text-gray-900 bg-white placeholder-gray-400 resize-none"
                 placeholder="Any specific landmarks, patient condition details, etc."
               />
             </div>

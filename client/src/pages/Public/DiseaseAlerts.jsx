@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createSocket } from "../../utils/socket";
 
 const FALLBACK_ALERTS = [
   {
@@ -131,6 +132,20 @@ export default function DiseaseAlerts() {
       cancelled = true;
     };
   }, [selectedCity]);
+
+  // Real-time socket listener for new alerts published by admin
+  useEffect(() => {
+    const socket = createSocket();
+
+    socket.on("alert:published", (newAlert) => {
+      const normalized = normalizeAlert(newAlert);
+      setAlertsData((prev) => [normalized, ...prev]);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   const filteredAlerts = alertsData.filter((alert) =>
     filter === "All" ? true : alert.severity === filter.toUpperCase(),

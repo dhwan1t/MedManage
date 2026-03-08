@@ -51,6 +51,8 @@ export default function HospitalRecommendations() {
   const [severityScore, setSeverityScore] = useState(0);
   const [isSelectingId, setIsSelectingId] = useState(null);
   const [_error, setError] = useState("");
+  const [confirmationMsg, setConfirmationMsg] = useState("");
+  const [severityFlags, setSeverityFlags] = useState([]);
 
   useEffect(() => {
     const fetchRecommendations = async () => {
@@ -100,6 +102,7 @@ export default function HospitalRecommendations() {
         setSeverityScore(
           data.severityScore || (data.severity && data.severity.score) || 0,
         );
+        setSeverityFlags((data.severity && data.severity.flags) || []);
       } catch (err) {
         console.warn(
           "Recommendations fetch failed, using mock data:",
@@ -130,8 +133,17 @@ export default function HospitalRecommendations() {
         console.warn("Select hospital failed:", errData.msg);
       }
 
-      // Navigate to the route view with caseId
-      navigate(`/ambulance/route/${caseId}`);
+      // Show confirmation message before navigating
+      const selectedHospital = hospitals.find((h) => h.id === id);
+      const hospitalName = selectedHospital?.name || "the selected hospital";
+      setConfirmationMsg(
+        `Patient data has been sent to ${hospitalName}. They are being notified to prepare resources.`,
+      );
+
+      // Navigate to the route view after a brief delay so user sees the message
+      setTimeout(() => {
+        navigate(`/ambulance/route/${caseId}`);
+      }, 2000);
     } catch (err) {
       console.error("Select hospital error:", err);
       // Still navigate — the route view has mock fallback
@@ -178,6 +190,72 @@ export default function HospitalRecommendations() {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-3xl mx-auto space-y-8">
+        {/* Confirmation Toast */}
+        {confirmationMsg && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full animate-fadeIn">
+            <div className="bg-green-50 border border-green-300 rounded-2xl p-5 shadow-lg flex items-start gap-4">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg
+                  className="w-6 h-6 text-green-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="font-bold text-green-800 text-sm">
+                  Hospital Selected Successfully
+                </p>
+                <p className="text-green-700 text-sm mt-1">{confirmationMsg}</p>
+                <p className="text-green-500 text-xs mt-2 font-medium">
+                  Redirecting to route view...
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clinical Alert Banners */}
+        {severityFlags.includes("stroke_risk") && (
+          <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <p className="text-sm font-bold text-amber-800">
+              Stroke Detected — Prioritizing stroke-capable centres
+            </p>
+          </div>
+        )}
+        {severityFlags.includes("sepsis_risk") && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <p className="text-sm font-bold text-red-800">
+              Sepsis Risk Detected — Time-critical intervention needed
+            </p>
+          </div>
+        )}
+        {severityFlags.includes("pediatric_critical") && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <p className="text-sm font-bold text-blue-800">
+              Pediatric Emergency — Age-adjusted assessment applied
+            </p>
+          </div>
+        )}
+        {severityFlags.includes("mass_casualty_immediate") && (
+          <div className="bg-red-100 border-l-4 border-red-700 p-4 rounded-r-xl flex items-center gap-3">
+            <span className="text-xl">🔴</span>
+            <p className="text-base font-extrabold text-red-900">
+              IMMEDIATE — Mass Casualty Triage Priority
+            </p>
+          </div>
+        )}
+
         {/* Header & Severity Banner */}
         <div className="space-y-4">
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
@@ -426,27 +504,29 @@ export default function HospitalRecommendations() {
                             </span>
                           </div>
 
-                          {/* Conditionally render Survival Probability */}
-                          {hospital.survivalProbability > 60 && (
-                            <div className="flex items-center gap-2 text-sm bg-green-50 border border-green-100 p-2 rounded-lg mt-2 inline-block">
-                              <svg
-                                className="w-5 h-5 text-green-500 inline mr-1"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                              <span className="font-bold text-green-700">
-                                Survival chance: {hospital.survivalProbability}%
-                              </span>
-                            </div>
-                          )}
+                          {/* Conditionally render Survival Probability when severity score > 60 */}
+                          {severityScore > 60 &&
+                            hospital.survivalProbability > 0 && (
+                              <div className="flex items-center gap-2 text-sm bg-green-50 border border-green-100 p-2 rounded-lg mt-2 inline-block">
+                                <svg
+                                  className="w-5 h-5 text-green-500 inline mr-1"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                  />
+                                </svg>
+                                <span className="font-bold text-green-700">
+                                  Survival chance:{" "}
+                                  {hospital.survivalProbability}%
+                                </span>
+                              </div>
+                            )}
                         </div>
                       </div>
                     </div>

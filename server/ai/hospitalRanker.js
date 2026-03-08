@@ -94,6 +94,30 @@ function rankHospitals(severity, vitals, hospitals) {
       score += 20;
     }
 
+    // ── STROKE ROUTING: boost stroke-capable centres ──
+    if (severity.flags && severity.flags.includes("stroke_risk")) {
+      const specialities = h.specialities || h.specialties || [];
+      const nameLower = (h.name || "").toLowerCase();
+      const hasNeuro =
+        specialities.some(
+          (s) =>
+            s.toLowerCase().includes("neurology") ||
+            s.toLowerCase().includes("neuro"),
+        ) ||
+        nameLower.includes("medical") ||
+        nameLower.includes("neuro") ||
+        nameLower.includes("brain");
+
+      if (hasNeuro) {
+        score += 25;
+      } else {
+        // Fallback: boost hospitals with highest doctor count
+        if (availDoctors >= 3) {
+          score += 10;
+        }
+      }
+    }
+
     // Cap the score at 100
     const finalScore = Math.min(Math.round(score), 100);
 

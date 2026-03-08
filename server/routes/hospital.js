@@ -1,7 +1,9 @@
 const router = require("express").Router();
 const Hospital = require("../models/Hospital");
 const Case = require("../models/Case");
+const Patient = require("../models/Patient");
 const User = require("../models/User");
+const Alert = require("../models/Alert");
 const { verifyToken, verifyRole } = require("../middleware/auth");
 
 /**
@@ -26,22 +28,84 @@ async function findUserHospital(reqUser) {
 }
 
 // GET /api/hospital/info — Get the hospital info for the authenticated user
-router.get("/info", verifyToken, verifyRole("hospital"), async (req, res) => {
-  try {
-    const hospital = await findUserHospital(req.user);
+router.get(
+  "/info",
+  verifyToken,
+  verifyRole("hospital", "admin"),
+  async (req, res) => {
+    try {
+      const hospital = await findUserHospital(req.user);
 
-    if (!hospital) {
-      return res.status(404).json({
-        msg: "No hospital linked to this user. Please contact an admin to link your account to a hospital.",
-      });
+      if (!hospital) {
+        return res.status(404).json({
+          msg: "No hospital linked to this user. Please contact an admin to link your account to a hospital.",
+        });
+      }
+
+      res.json(hospital);
+    } catch (err) {
+      console.error("hospital GET /info error:", err.message);
+      res.status(500).json({ msg: "Server error" });
     }
+  },
+);
 
-    res.json(hospital);
-  } catch (err) {
-    console.error("hospital GET /info error:", err.message);
-    res.status(500).json({ msg: "Server error" });
-  }
-});
+// GET /api/hospital/incoming — Fetch existing en_route cases for this hospital
+// So the dashboard shows incoming ambulances even after a page refresh.
+router.get(
+  "/incoming",
+  verifyToken,
+  verifyRole("hospital", "admin"),
+  async (req, res) => {
+    try {
+      const hospital = await findUserHospital(req.user);
+      if (!hospital) {
+        return res
+          .status(404)
+          .json({ msg: "Hospital not found for this user" });
+      }
+
+      const hId = hospital._id;
+
+      // Find all cases that are en_route to this hospital
+      const cases = await Case.find({
+        status: "en_route",
+        $or: [{ selectedHospital: hId }, { hospital: hId }],
+      }).populate("patient");
+
+      const incoming = cases
+        .filter((c) => c.patient)
+        .map((c) => {
+          const p = c.patient;
+          const sev = p.severity || {};
+
+          const resources = [];
+          if (sev.score > 70) resources.push("ICU");
+          if (sev.flags && sev.flags.includes("critical_trauma"))
+            resources.push("OT");
+          if (sev.flags && sev.flags.includes("respiratory_distress"))
+            resources.push("ER");
+
+          return {
+            caseId: c.caseId,
+            caseObjectId: c._id,
+            patientId: p._id,
+            name: p.name,
+            severity: sev.level ? sev.level.toUpperCase() : "UNKNOWN",
+            severityScore: sev.score || 0,
+            eta: c.estimatedEta || "Calculating...",
+            resources,
+            vitals: p.vitals || {},
+          };
+        });
+
+      res.json(incoming);
+    } catch (err) {
+      console.error("hospital GET /incoming error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
 
 // PUT /api/hospital/availability
 //
@@ -53,7 +117,7 @@ router.get("/info", verifyToken, verifyRole("hospital"), async (req, res) => {
 router.put(
   "/availability",
   verifyToken,
-  verifyRole("hospital"),
+  verifyRole("hospital", "admin"),
   async (req, res) => {
     try {
       const hospital = await findUserHospital(req.user);
@@ -151,7 +215,7 @@ router.put(
 router.put(
   "/allocate",
   verifyToken,
-  verifyRole("hospital"),
+  verifyRole("hospital", "admin"),
   async (req, res) => {
     try {
       const { type, caseId } = req.body;
@@ -243,7 +307,7 @@ router.put(
 router.post(
   "/alert-er",
   verifyToken,
-  verifyRole("hospital"),
+  verifyRole("hospital", "admin"),
   async (req, res) => {
     try {
       const { caseId } = req.body;
@@ -269,6 +333,62 @@ router.post(
       res.json({ alerted: true });
     } catch (err) {
       console.error("hospital POST /alert-er error:", err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
+  },
+);
+
+// POST /api/hospital/report-disease
+//
+// Hospital staff can report a disease trend for admin review.
+// Body: { diseaseName, caseCount, severity: 'high'|'medium'|'low', notes }
+// Creates an Alert document with active: false (pending admin approval).
+router.post(
+  "/report-disease",
+  verifyToken,
+  verifyRole("hospital", "admin"),
+  async (req, res) => {
+    try {
+      const { diseaseName, caseCount, severity, notes } = req.body;
+
+      if (!diseaseName || caseCount == null || !severity) {
+        return res
+          .status(400)
+          .json({ msg: "diseaseName, caseCount, and severity are required" });
+      }
+
+      const allowedSeverities = ["high", "medium", "low"];
+      if (!allowedSeverities.includes(severity)) {
+        return res
+          .status(400)
+          .json({ msg: "severity must be one of: high, medium, low" });
+      }
+
+      const hospital = await findUserHospital(req.user);
+
+      const alert = new Alert({
+        type: "disease",
+        title: `${diseaseName} Outbreak Report`,
+        message: notes || `${caseCount} cases of ${diseaseName} reported.`,
+        severity,
+        diseaseName,
+        caseCount: parseInt(caseCount, 10),
+        reportedBy: hospital ? hospital._id : undefined,
+        city:
+          hospital && hospital.location
+            ? hospital.location.city || hospital.location.address
+            : undefined,
+        active: false, // Inactive until admin approves
+      });
+
+      await alert.save();
+
+      res.status(201).json({
+        alertId: alert._id,
+        status: "pending_review",
+      });
+    } catch (err) {
+      console.error("hospital POST /report-disease error:", err.message);
       res.status(500).json({ msg: "Server error" });
     }
   },

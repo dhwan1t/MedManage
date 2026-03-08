@@ -1,41 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-
-// Simple mock data for alerts (re-used for the latest alert section)
-const alertsData = [
-  {
-    id: 1,
-    name: "H3N2 Influenza",
-    severity: "HIGH",
-    cases: 142,
-    zones: ["Zone 4", "Zone 7"],
-    updated: "2h ago",
-    symptoms: ["Fever", "Cough", "Sore throat", "Muscle aches"],
-  },
-  {
-    id: 2,
-    name: "Dengue Fever",
-    severity: "MEDIUM",
-    cases: 38,
-    zones: ["Zone 2"],
-    updated: "5h ago",
-    symptoms: [
-      "High fever",
-      "Severe headache",
-      "Joint and muscle pain",
-      "Rash",
-    ],
-  },
-  {
-    id: 3,
-    name: "Common Cold Outbreak",
-    severity: "LOW",
-    cases: 290,
-    zones: ["Zone 1", "Zone 3", "Zone 5"],
-    updated: "1d ago",
-    symptoms: ["Runny nose", "Sneezing", "Mild cough", "Congestion"],
-  },
-];
 
 const severityColors = {
   HIGH: "bg-red-500 text-white",
@@ -52,38 +16,44 @@ const bgColors = {
 export default function LandingPage() {
   const navigate = useNavigate();
   const [showToast, setShowToast] = useState(false);
+  const [latestAlert, setLatestAlert] = useState(null);
 
   const username = useMemo(() => {
-    // Attempt to decode a JWT from localStorage for the username
-    const token = localStorage.getItem("token");
-    if (token) {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      if (user.name) return user.name.split(" ")[0];
+    } catch {
+      // ignore
+    }
+    return "there";
+  }, []);
+
+  useEffect(() => {
+    async function fetchLatestAlert() {
       try {
-        // Very basic manual decoding of JWT payload (base64url to JSON object)
-        const payloadBase64 = token.split(".")[1];
-        if (payloadBase64) {
-          const decodedJson = atob(payloadBase64);
-          const decodedObj = JSON.parse(decodedJson);
-          if (decodedObj && decodedObj.name) {
-            return decodedObj.name.split(" ")[0]; // Get first name
-          } else if (decodedObj && decodedObj.username) {
-            return decodedObj.username;
-          }
+        const res = await fetch(`/api/public/disease-alerts?city=Ludhiana`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const raw = data[0];
+          setLatestAlert({
+            name: raw.title || raw.name || "Unknown Alert",
+            severity: (raw.severity || "low").toUpperCase(),
+            cases: raw.caseCount ?? raw.cases ?? 0,
+            zones: raw.affectedZones || raw.zones || [],
+          });
         }
       } catch (err) {
-        console.error("Failed to decode token", err);
-        return "User";
+        console.warn("Failed to fetch latest alert:", err.message);
       }
     }
-    // Fallback for demo purposes if no token
-    return "Alex";
+    fetchLatestAlert();
   }, []);
 
   const handleComingSoon = () => {
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
   };
-
-  const latestAlert = alertsData[0]; // Take the first one for the "Latest Alert" section
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans pb-12 relative overflow-hidden">
@@ -277,81 +247,83 @@ export default function LandingPage() {
         </div>
 
         {/* Latest Alert Preview */}
-        <div className="pt-4">
-          <div className="flex justify-between items-end mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Latest Alert</h2>
-            <button
+        {latestAlert && (
+          <div className="pt-4">
+            <div className="flex justify-between items-end mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Latest Alert</h2>
+              <button
+                onClick={() => navigate("/alerts")}
+                className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                View All
+              </button>
+            </div>
+
+            <div
               onClick={() => navigate("/alerts")}
-              className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+              className={`cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-1 ${bgColors[latestAlert.severity] || "bg-gray-50 border-gray-100"}`}
             >
-              View All
-            </button>
-          </div>
-
-          <div
-            onClick={() => navigate("/alerts")}
-            className={`cursor-pointer rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-1 ${bgColors[latestAlert.severity]}`}
-          >
-            <div className="p-5">
-              <div className="flex justify-between items-start mb-3">
-                <h3 className="text-lg font-bold text-gray-900">
-                  {latestAlert.name}
-                </h3>
-                <span
-                  className={`px-2 py-1 text-[10px] uppercase font-bold rounded-md shadow-sm ${severityColors[latestAlert.severity]}`}
-                >
-                  {latestAlert.severity}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-1.5 text-gray-700">
-                  <svg
-                    className="w-4 h-4 text-indigo-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+              <div className="p-5">
+                <div className="flex justify-between items-start mb-3">
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {latestAlert.name}
+                  </h3>
+                  <span
+                    className={`px-2 py-1 text-[10px] uppercase font-bold rounded-md shadow-sm ${severityColors[latestAlert.severity] || "bg-gray-500 text-white"}`}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                    />
-                  </svg>
-                  <span className="font-semibold">
-                    {latestAlert.cases}{" "}
-                    <span className="font-normal text-gray-500">cases</span>
+                    {latestAlert.severity}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-gray-700">
-                  <svg
-                    className="w-4 h-4 text-red-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                  <span className="font-medium text-gray-600 truncate max-w-[120px] sm:max-w-none">
-                    {latestAlert.zones.join(", ")}
-                  </span>
+
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-1.5 text-gray-700">
+                    <svg
+                      className="w-4 h-4 text-indigo-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                      />
+                    </svg>
+                    <span className="font-semibold">
+                      {latestAlert.cases}{" "}
+                      <span className="font-normal text-gray-500">cases</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-gray-700">
+                    <svg
+                      className="w-4 h-4 text-red-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                    </svg>
+                    <span className="font-medium text-gray-600 truncate max-w-[120px] sm:max-w-none">
+                      {latestAlert.zones.join(", ")}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Tailwind specific custom animations mapped directly in class string (requires standard tailwind setup or just using arbitrary values)
