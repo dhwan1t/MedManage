@@ -261,10 +261,15 @@ router.put(
       hospital.resources[resourceKey].available -= 1;
       await hospital.save();
 
-      // Update the case timeline
-      let caseObj = await Case.findById(caseId);
+      // Update the case timeline — try string caseId first (no CastError risk),
+      // then fall back to ObjectId lookup
+      let caseObj = await Case.findOne({ caseId: caseId });
       if (!caseObj) {
-        caseObj = await Case.findOne({ caseId: caseId });
+        try {
+          caseObj = await Case.findById(caseId);
+        } catch (_) {
+          // caseId is not a valid ObjectId — that's fine, we already tried findOne
+        }
       }
 
       if (caseObj) {
@@ -275,12 +280,20 @@ router.put(
         await caseObj.save();
       }
 
-      // Emit targeted socket event
+      // Emit targeted socket events
       const io = req.app.get("io");
       if (io) {
         io.to(hospital._id.toString()).emit("hospital:resource_allocated", {
           type,
           caseId,
+          resources: hospital.resources,
+        });
+
+        // Also emit bed_update so BedManagement grid refreshes in real time
+        io.to(hospital._id.toString()).emit("hospital:bed_update", {
+          hospitalId: hospital._id,
+          type,
+          action: "reserved",
           resources: hospital.resources,
         });
       }

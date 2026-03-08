@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import ThemeToggle from "../../components/shared/ThemeToggle";
 import { createSocket } from "../../utils/socket";
 import { useAuth } from "../../context/useAuth";
@@ -77,6 +83,26 @@ const INITIAL_SORTED_QUEUE = [...MOCK_QUEUE].sort(
   (a, b) => b.severity.score - a.severity.score,
 );
 
+/** Parse an ETA string like "~12 min", "6m", "5m 30s" into total seconds. Returns null if unparseable. */
+function parseEtaToSeconds(etaStr) {
+  if (!etaStr || typeof etaStr !== "string") return null;
+  // "~12 min" or "12 min"
+  let m = etaStr.match(/~?\s*(\d+)\s*min/i);
+  if (m) return parseInt(m[1], 10) * 60;
+  // "6m" or "6m 30s"
+  m = etaStr.match(/(\d+)\s*m/i);
+  if (m) {
+    let secs = parseInt(m[1], 10) * 60;
+    const s = etaStr.match(/(\d+)\s*s/i);
+    if (s) secs += parseInt(s[1], 10);
+    return secs;
+  }
+  // plain number treated as minutes
+  m = etaStr.match(/^(\d+)$/);
+  if (m) return parseInt(m[1], 10) * 60;
+  return null;
+}
+
 const PriorityQueue = () => {
   const { authHeaders } = useAuth();
   const [queue, setQueue] = useState(INITIAL_SORTED_QUEUE);
@@ -85,15 +111,59 @@ const PriorityQueue = () => {
   );
   const [highlightedRow, setHighlightedRow] = useState(null);
 
+  // Stable ref for startCountdown so socket effect doesn't need it as dep
+  const startCountdownRef = useRef(null);
+
+  // FIX 1: Track allocation state per patient  { [caseId]: { icu: bool, ot: bool } }
+  const [allocations, setAllocations] = useState({});
+
+  // FIX 2: Live ETA countdowns  { [patientId]: remainingSeconds }
+  const [etaCountdowns, setEtaCountdowns] = useState({});
+  const etaIntervalsRef = useRef({});
+
   // Audio ref for alert sound on high priority new arrival
   const alertAudioRef = useRef(null);
+
+  // FIX 2: Start a countdown timer for a patient
+  const startCountdown = useCallback((patientId, totalSeconds) => {
+    // Clear existing interval for this patient if any
+    if (etaIntervalsRef.current[patientId]) {
+      clearInterval(etaIntervalsRef.current[patientId]);
+    }
+    setEtaCountdowns((prev) => ({ ...prev, [patientId]: totalSeconds }));
+    const id = setInterval(() => {
+      setEtaCountdowns((prev) => {
+        const cur = prev[patientId];
+        if (cur == null || cur <= 0) {
+          clearInterval(id);
+          return { ...prev, [patientId]: 0 };
+        }
+        return { ...prev, [patientId]: cur - 1 };
+      });
+    }, 1000);
+    etaIntervalsRef.current[patientId] = id;
+  }, []);
+
+  // Keep ref in sync with latest callback
+  startCountdownRef.current = startCountdown;
+
+  // Cleanup all countdown intervals on unmount
+  useEffect(() => {
+    const intervals = etaIntervalsRef.current;
+    return () => {
+      Object.values(intervals).forEach(clearInterval);
+    };
+  }, []);
+
+  // Stable reference to authHeaders to avoid re-fetching on every render
+  const stableAuthHeaders = useMemo(() => authHeaders, [authHeaders]);
 
   // Fetch real active cases on mount
   useEffect(() => {
     async function fetchActiveCases() {
       try {
         const res = await fetch("/api/cases/hospital/active", {
-          headers: authHeaders(),
+          headers: stableAuthHeaders(),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const cases = await res.json();
@@ -110,6 +180,7 @@ const PriorityQueue = () => {
                 eta:
                   c.estimatedEta ||
                   (c.status === "en_route" ? "En Route" : "Pending"),
+                _etaRaw: c.estimatedEta || null,
                 severity: p.severity || {
                   score: 0,
                   level: "STABLE",
@@ -126,6 +197,7 @@ const PriorityQueue = () => {
                 requiredResources: [],
                 timestamp: new Date(c.createdAt).getTime(),
                 caseId: c.caseId,
+                caseObjectId: c._id,
               };
             })
             .filter(Boolean)
@@ -136,6 +208,13 @@ const PriorityQueue = () => {
           if (mapped.length > 0) {
             setQueue(mapped);
             setSelectedPatient(mapped[0]);
+            // FIX 2: Kick off countdowns for patients with parseable ETAs
+            mapped.forEach((p) => {
+              const secs = parseEtaToSeconds(p._etaRaw || p.eta);
+              if (secs != null && secs > 0) {
+                startCountdown(p.patientId, secs);
+              }
+            });
           }
         }
       } catch (err) {
@@ -147,13 +226,19 @@ const PriorityQueue = () => {
       }
     }
     fetchActiveCases();
-  }, []);
+  }, [stableAuthHeaders, startCountdown]);
 
   useEffect(() => {
     // Setup Socket Connection
     const socket = createSocket();
 
     socket.on("ambulance:dispatch", (newPatient) => {
+      // FIX 2: Start countdown for the new patient if eta is parseable
+      const secs = parseEtaToSeconds(newPatient.eta);
+      if (secs != null && secs > 0) {
+        startCountdownRef.current(newPatient.patientId, secs);
+      }
+
       setQueue((prev) => {
         const updated = [...prev, newPatient];
         const resorted = updated.sort(
@@ -279,9 +364,35 @@ const PriorityQueue = () => {
     return "bg-green-500 text-white";
   };
 
-  const handleAllocate = async (type, pid) => {
-    // In a real app, this integrates with the same endpoint as IncomingPatientAlert
-    alert(`Initiating allocation of ${type} for patient ${pid}`);
+  const handleAllocate = async (type, patient) => {
+    const id = patient.caseId || patient.caseObjectId || patient.patientId;
+    const key = type.toLowerCase(); // "icu" or "ot"
+
+    // Prevent double-click
+    if (allocations[id]?.[key]) return;
+
+    try {
+      const res = await fetch("/api/hospital/allocate", {
+        method: "PUT",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ caseId: id, type: type.toUpperCase() }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.msg || `Failed to allocate ${type}`);
+        return;
+      }
+
+      // Mark as allocated
+      setAllocations((prev) => ({
+        ...prev,
+        [id]: { ...prev[id], [key]: true },
+      }));
+    } catch (err) {
+      console.error(`Allocate ${type} error:`, err);
+      alert(`Network error while allocating ${type}`);
+    }
   };
 
   return (
@@ -386,10 +497,19 @@ const PriorityQueue = () => {
                         className={`inline-block px-2.5 py-1 rounded text-xs font-bold ${
                           patient.eta === "Arrived"
                             ? "bg-slate-100 dark:bg-gray-800 text-slate-600 dark:text-gray-400"
-                            : "bg-blue-50 text-blue-700 border border-blue-100"
+                            : etaCountdowns[patient.patientId] != null &&
+                                etaCountdowns[patient.patientId] <= 0
+                              ? "bg-green-50 text-green-700 border border-green-200"
+                              : "bg-blue-50 text-blue-700 border border-blue-100"
                         }`}
                       >
-                        {patient.eta}
+                        {patient.eta === "Arrived"
+                          ? "Arrived"
+                          : etaCountdowns[patient.patientId] != null
+                            ? etaCountdowns[patient.patientId] <= 0
+                              ? "Arriving Now"
+                              : `${Math.floor(etaCountdowns[patient.patientId] / 60)}m ${etaCountdowns[patient.patientId] % 60}s`
+                            : patient.eta}
                       </span>
                     </div>
 
@@ -568,22 +688,42 @@ const PriorityQueue = () => {
 
                 {/* Assignment Actions */}
                 <div className="mt-6 pt-6 border-t border-slate-100 dark:border-gray-800 grid grid-cols-2 gap-3 shrink-0">
-                  <button
-                    onClick={() =>
-                      handleAllocate("ICU", selectedPatient.patientId)
-                    }
-                    className="w-full bg-white dark:bg-gray-900 border-2 border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-300 font-bold py-3 rounded-xl hover:border-indigo-400 hover:text-indigo-700 transition-colors shadow-sm active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <span>🛏️</span> Assign ICU
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleAllocate("OT", selectedPatient.patientId)
-                    }
-                    className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200 active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <span>🔪</span> Assign OT
-                  </button>
+                  {(() => {
+                    const allocId =
+                      selectedPatient.caseId ||
+                      selectedPatient.caseObjectId ||
+                      selectedPatient.patientId;
+                    const icuDone = allocations[allocId]?.icu === true;
+                    const otDone = allocations[allocId]?.ot === true;
+                    return (
+                      <>
+                        <button
+                          onClick={() => handleAllocate("ICU", selectedPatient)}
+                          disabled={icuDone}
+                          className={`w-full font-bold py-3 rounded-xl transition-colors shadow-sm active:scale-95 flex items-center justify-center gap-2 ${
+                            icuDone
+                              ? "bg-green-500 text-white border-2 border-green-600 cursor-not-allowed"
+                              : "bg-white dark:bg-gray-900 border-2 border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-300 hover:border-indigo-400 hover:text-indigo-700"
+                          }`}
+                        >
+                          <span>🛏️</span>{" "}
+                          {icuDone ? "ICU Assigned ✓" : "Assign ICU"}
+                        </button>
+                        <button
+                          onClick={() => handleAllocate("OT", selectedPatient)}
+                          disabled={otDone}
+                          className={`w-full font-bold py-3 rounded-xl transition-colors shadow-md active:scale-95 flex items-center justify-center gap-2 ${
+                            otDone
+                              ? "bg-green-500 text-white border-2 border-green-600 cursor-not-allowed shadow-green-200"
+                              : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200"
+                          }`}
+                        >
+                          <span>🔪</span>{" "}
+                          {otDone ? "OT Assigned ✓" : "Assign OT"}
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (

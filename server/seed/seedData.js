@@ -246,6 +246,36 @@ const seedData = async () => {
       hospitalId: hospitals[2]._id,
     });
 
+    // ── Hospital staff for PGIMER Annex (hospitals[1]) ──
+    const hospitalUser3 = await User.create({
+      name: "PGIMER Staff",
+      email: "pgimer@mediroute.com",
+      password: hashedPassword,
+      role: "hospital",
+      phone: "7890123456",
+      hospitalId: hospitals[1]._id,
+    });
+
+    // ── Hospital staff for Civil Hospital (hospitals[3]) ──
+    const hospitalUser4 = await User.create({
+      name: "Civil Staff",
+      email: "civil@mediroute.com",
+      password: hashedPassword,
+      role: "hospital",
+      phone: "8901234567",
+      hospitalId: hospitals[3]._id,
+    });
+
+    // ── Hospital staff for Max Super Speciality (hospitals[4]) ──
+    const hospitalUser5 = await User.create({
+      name: "Max Staff",
+      email: "max@mediroute.com",
+      password: hashedPassword,
+      role: "hospital",
+      phone: "9012345678",
+      hospitalId: hospitals[4]._id,
+    });
+
     console.log("✅ Users seeded & linked to ambulances/hospitals");
 
     // ══════════════════════════════════════════════════
@@ -342,7 +372,7 @@ const seedData = async () => {
     console.log(`  Hospitals:   ${hospitals.length}`);
     console.log(`  Ambulances:  ${ambulances.length}`);
     console.log(`  Alerts:      ${alerts.length}`);
-    console.log(`  Users:       6`);
+    console.log(`  Users:       9`);
     console.log(`  Cases:       1 (sample)`);
     console.log("═".repeat(60));
     if (passwordWasGenerated) {
@@ -379,6 +409,21 @@ const seedData = async () => {
         role: "HOSPITAL",
         email: "hospital2@mediroute.com",
         linked: "Apollo Ludhiana",
+      },
+      {
+        role: "HOSPITAL",
+        email: "pgimer@mediroute.com",
+        linked: "PGIMER Annex",
+      },
+      {
+        role: "HOSPITAL",
+        email: "civil@mediroute.com",
+        linked: "Civil Hospital",
+      },
+      {
+        role: "HOSPITAL",
+        email: "max@mediroute.com",
+        linked: "Max Super Speciality",
       },
       { role: "ADMIN", email: "admin@mediroute.com", linked: "—" },
     ];

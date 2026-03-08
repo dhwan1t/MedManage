@@ -74,6 +74,67 @@ const BedManagement = () => {
 
   useEffect(() => {
     socket = createSocket();
+
+    // FIX 3: Listen for bed_update events from the server (e.g. after allocate from PriorityQueue)
+    socket.on("hospital:bed_update", (data) => {
+      const resourceType = (data.type || "").toUpperCase();
+      if (resourceType === "ICU") {
+        setIcuBeds((prev) => {
+          const idx = prev.findIndex((b) => b.status === "AVAILABLE");
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "RESERVED" };
+          return updated;
+        });
+      } else if (resourceType === "OT") {
+        setOtTheatres((prev) => {
+          const idx = prev.findIndex((t) => t.status === "AVAILABLE");
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "RESERVED" };
+          return updated;
+        });
+      } else if (resourceType === "ER") {
+        setErBays((prev) => {
+          const idx = prev.findIndex((e) => e.status === "AVAILABLE");
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "RESERVED" };
+          return updated;
+        });
+      }
+    });
+
+    // Also listen for resource_allocated (same purpose, different event name)
+    socket.on("hospital:resource_allocated", (data) => {
+      const resourceType = (data.type || "").toUpperCase();
+      if (resourceType === "ICU") {
+        setIcuBeds((prev) => {
+          const idx = prev.findIndex((b) => b.status === "AVAILABLE");
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "RESERVED" };
+          return updated;
+        });
+      } else if (resourceType === "OT") {
+        setOtTheatres((prev) => {
+          const idx = prev.findIndex((t) => t.status === "AVAILABLE");
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "RESERVED" };
+          return updated;
+        });
+      } else if (resourceType === "ER") {
+        setErBays((prev) => {
+          const idx = prev.findIndex((e) => e.status === "AVAILABLE");
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status: "RESERVED" };
+          return updated;
+        });
+      }
+    });
+
     return () => {
       if (socket) socket.disconnect();
     };
@@ -260,11 +321,11 @@ const BedManagement = () => {
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-3">
+              <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1.5">
                 {Array.from({ length: TOTAL_GENERAL }).map((_, i) => (
                   <div
                     key={i}
-                    className={`aspect-square rounded-md border shadow-sm transition-colors cursor-pointer hover:opacity-80
+                    className={`w-8 h-8 rounded border transition-colors cursor-pointer hover:opacity-80
                       ${i < generalBedsAvailable ? "bg-green-400 border-green-500" : "bg-red-400 border-red-500"}
                     `}
                     title={`General Bed ${i + 1}`}

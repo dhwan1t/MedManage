@@ -31,7 +31,11 @@ const DEMO_ACCOUNTS = [
     shadow: "shadow-blue-500/30",
     ring: "ring-blue-400",
     iconBg: "bg-blue-400/20",
-    features: ["Live Case Dashboard", "Vitals Entry Form", "AI Hospital Ranking"],
+    features: [
+      "Live Case Dashboard",
+      "Vitals Entry Form",
+      "AI Hospital Ranking",
+    ],
   },
   {
     role: "hospital",
@@ -47,6 +51,33 @@ const DEMO_ACCOUNTS = [
     ring: "ring-violet-400",
     iconBg: "bg-violet-400/20",
     features: ["Bed Management", "Priority Queue", "Incoming Patient Alerts"],
+    hospitals: [
+      {
+        name: "City Medical Center",
+        email: "hospital@mediroute.com",
+        password: "pass123",
+      },
+      {
+        name: "Apollo Ludhiana",
+        email: "hospital2@mediroute.com",
+        password: "pass123",
+      },
+      {
+        name: "PGIMER Annex",
+        email: "pgimer@mediroute.com",
+        password: "pass123",
+      },
+      {
+        name: "Civil Hospital",
+        email: "civil@mediroute.com",
+        password: "pass123",
+      },
+      {
+        name: "Max Super Speciality",
+        email: "max@mediroute.com",
+        password: "pass123",
+      },
+    ],
   },
   {
     role: "admin",
@@ -70,6 +101,7 @@ export default function DemoPage() {
   const { login } = useAuth();
   const [loadingRole, setLoadingRole] = useState(null);
   const [error, setError] = useState("");
+  const [expandedCard, setExpandedCard] = useState(null);
 
   const handleDemoLogin = async (account) => {
     setLoadingRole(account.role);
@@ -101,7 +133,9 @@ export default function DemoPage() {
       navigate(account.redirect);
     } catch (err) {
       console.error("Demo login error:", err);
-      setError("Cannot connect to server. Make sure it's running on port 5001.");
+      setError(
+        "Cannot connect to server. Make sure it's running on port 5001.",
+      );
       setLoadingRole(null);
     }
   };
@@ -161,7 +195,14 @@ export default function DemoPage() {
           <div className="mb-8 max-w-2xl w-full bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
             <p className="text-red-400 font-semibold text-sm">{error}</p>
             <p className="text-red-400/70 text-xs mt-1">
-              Run: <code className="bg-red-500/20 px-1.5 py-0.5 rounded font-mono">npm run seed</code> then <code className="bg-red-500/20 px-1.5 py-0.5 rounded font-mono">npm run dev</code>
+              Run:{" "}
+              <code className="bg-red-500/20 px-1.5 py-0.5 rounded font-mono">
+                npm run seed
+              </code>{" "}
+              then{" "}
+              <code className="bg-red-500/20 px-1.5 py-0.5 rounded font-mono">
+                npm run dev
+              </code>
             </p>
           </div>
         )}
@@ -171,16 +212,24 @@ export default function DemoPage() {
           {DEMO_ACCOUNTS.map((account) => {
             const isLoading = loadingRole === account.role;
             const isDisabled = loadingRole !== null;
+            const isExpanded = expandedCard === account.role;
 
             return (
               <button
                 key={account.role}
-                onClick={() => handleDemoLogin(account)}
-                disabled={isDisabled}
+                onClick={() => {
+                  if (account.hospitals) {
+                    setExpandedCard(isExpanded ? null : account.role);
+                  } else {
+                    handleDemoLogin(account);
+                  }
+                }}
+                disabled={isDisabled && !account.hospitals}
                 className={`group relative text-left rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm p-6 sm:p-7 transition-all duration-300 overflow-hidden
-                  ${isDisabled && !isLoading ? "opacity-40 cursor-not-allowed" : ""}
-                  ${!isDisabled ? "hover:bg-white/[0.06] hover:border-white/20 hover:scale-[1.02] hover:-translate-y-1 active:scale-[0.98]" : ""}
+                  ${isDisabled && !isLoading && !account.hospitals ? "opacity-40 cursor-not-allowed" : ""}
+                  ${!isDisabled || account.hospitals ? "hover:bg-white/[0.06] hover:border-white/20 hover:scale-[1.02] hover:-translate-y-1 active:scale-[0.98]" : ""}
                   ${isLoading ? `ring-2 ${account.ring} bg-white/[0.06]` : ""}
+                  ${isExpanded ? `ring-2 ${account.ring} bg-white/[0.06] sm:col-span-2` : ""}
                 `}
               >
                 {/* Gradient glow on hover */}
@@ -266,6 +315,72 @@ export default function DemoPage() {
                     </span>
                   ))}
                 </div>
+
+                {/* Hospital sub-options */}
+                {account.hospitals && isExpanded && (
+                  <div className="relative mt-4 pt-4 border-t border-white/10 space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                      Select Hospital:
+                    </p>
+                    {account.hospitals.map((h) => (
+                      <div
+                        key={h.email}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDemoLogin({
+                            ...account,
+                            email: h.email,
+                            password: h.password,
+                            label: h.name,
+                          });
+                        }}
+                        className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-violet-500/20 hover:border-violet-400/40 transition-all cursor-pointer group/hospital"
+                      >
+                        <div>
+                          <span className="text-sm font-bold text-white">
+                            {h.name}
+                          </span>
+                          <span className="block text-[11px] font-mono text-slate-500">
+                            {h.email}
+                          </span>
+                        </div>
+                        <svg
+                          className="w-4 h-4 text-slate-500 group-hover/hospital:text-violet-400 transition-colors"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2.5}
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Expand hint for hospital card */}
+                {account.hospitals && !isExpanded && (
+                  <div className="relative mt-3 text-[11px] text-violet-400/70 font-semibold flex items-center gap-1">
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                    Click to choose hospital
+                  </div>
+                )}
 
                 {/* Loading overlay */}
                 {isLoading && (

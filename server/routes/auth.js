@@ -22,7 +22,7 @@ router.post("/register", async (req, res) => {
     }
 
     // Accept any valid role; default to "public" if missing or invalid
-    const ALLOWED_ROLES = ["public", "ambulance", "hospital", "admin"];
+    const ALLOWED_ROLES = ["public", "ambulance", "hospital"];
     const assignedRole = ALLOWED_ROLES.includes(role) ? role : "public";
 
     let user = await User.findOne({ email });
