@@ -27,6 +27,24 @@
 
 </div>
 
+<div align="center">
+
+**Built for emergencies. Engineered for speed.**
+
+**AI Assists, But Human commands**
+
+**We Team Tencaious position our system as compliant infrastructure, not a liability risk.**
+
+*MedManage -- Because the right hospital at the right time saves lives.*
+
+<!--</div>
+
+<div align="center">
+
+**AI Assists, But Human commands** 
+
+</div>-->
+
 ---
 
 ## Table of Contents
@@ -691,11 +709,3 @@ medmanage/
 | **P4** | AI Engine | `server/ai/` -- severity aggregator, hospital ranker, 14 scoring models |
 
 ---
-
-<div align="center">
-
-**Built for emergencies. Engineered for speed.**
-
-*MedManage -- Because the right hospital at the right time saves lives.*
-
-</div>
