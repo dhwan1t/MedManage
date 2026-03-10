@@ -33,7 +33,7 @@
 
 **AI Assists, But Human commands**
 
-**We Team Tencaious position our system as compliant infrastructure, not a liability risk.**
+**We Team Tenacious position our system as compliant infrastructure, not a liability risk.**
 
 *MedManage -- Because the right hospital at the right time saves lives.*
 
